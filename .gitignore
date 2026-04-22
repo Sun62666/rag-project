@@ -1,0 +1,37 @@
+# --- IDE配置
+.idea/
+.vscode/
+*.iml
+
+# --- Python缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Jupyter Notebook检查点
+.ipynb_checkpoints/
+
+# --- 测试文件（本地调试用）
+Test/
+
+# --- 日志文件
+*.log
+logs/
+
+# --- RAG大文件（模型和数据）
+model/
+data/
+
+# --- 敏感信息（API密钥）
+Key.env
+Env.env
+*.secret
+
+# --- 评估生成的结果文件（保留脚本，忽略结果）
+eval/*.csv
+eval/*.json
+.jbeval/
+
+# --- OS系统文件
+.DS_Store
+Thumbs.db

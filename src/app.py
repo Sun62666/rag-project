@@ -27,8 +27,7 @@ graph = build_graph(retriever)
 print("\n查看redis缓存中。。。。")
 cache = redis.from_url(cfg.REDIS_URL,decode_responses=True)
 
-
-
+print("修复了bug")
 class Query(BaseModel):
     query: str
 # def get_session_history(user_id,session_id):

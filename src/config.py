@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 abpath = os.path.dirname(__file__)
-env_path = os.path.join(os.path.dirname(abpath),"Env.env")
+env_path = os.path.join(os.path.dirname(abpath),"Key.env")
 rerank_path = os.path.join(os.path.dirname(abpath),"model","bge-reranker-v2-m3")
 load_dotenv(env_path)
 

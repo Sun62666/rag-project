@@ -33,7 +33,7 @@ class OpsRetriever:
         self._init_retrievers()
         print("检索其初始化成功。。。。")
         self.reranker = CrossEncoder(self.cfg.RERANK_MODEL)
-        print("重排序成功。。。。")
+        print("重排序模型创建成功。。。。")
         self.initialized = True
     def _split_docs(self,path: str):
         docs = PyPDFLoader(path).load()
@@ -87,13 +87,13 @@ class OpsRetriever:
 
     def retriever_and_rerank(self, query: str, top_k: int = 3) -> List[str]:
         docs = self.get_ensemble_rerank_docs(query,top_k)
-        result = []
+        results = []
         for doc in docs:
             content = doc.page_content
             source = doc.metadata.get("source","位置文档")
-            result.append(f"{source} {content}")
-        # print(f"\n转换为字符串格式的结果: {result}")
-        return result
+            results.append(f"{source} {content}")
+        # print(f"\n转换为字符串格式的结果: {results}")
+        return results
     def merge_chunks(self,chunks):
         merge = []
         current = None
@@ -156,7 +156,7 @@ class OpsRetriever:
         scores = self.reranker.predict(pairs)
         ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
         # print(f"\npairs: {pairs[:2]}")
-        print(f"\nrerank_scores: {scores[:top_k]}")
+        print(f"\nrerank_scores: {[score for _,score in ranked[:2]]}")
         # print(f"\nranked_docs: {ranked[:2]}")
 
         result = [doc for doc, score in ranked[:top_k]]

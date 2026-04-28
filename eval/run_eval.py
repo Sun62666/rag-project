@@ -1,8 +1,6 @@
 import json
 import os
 import sys
-import pandas as pd
-from ragas import experiment
 from datasets import Dataset
 from ragas import evaluate
 from ragas.metrics import faithfulness, answer_relevancy, context_precision

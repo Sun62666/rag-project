@@ -1,5 +1,6 @@
 import hashlib
 import re
+import time
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Milvus
 from langchain_core.documents import Document
@@ -45,13 +46,24 @@ class OpsRetriever:
         print(f"\n长度为： {len(self.splits)}  划分数据成果： {self.splits[:2]} ")
 
     def _init_retrievers(self):
-        try:
-            connections.connect(
-                alias="default",
-                uri=self.cfg.MILVUS_URI  # 和你的配置完全一致
-            )
-        except Exception as e:
-            print("⚠ 连接向量库失败！")
+        max_retries = 10
+        for i in range(max_retries):
+            try:
+                print(f"尝试连接 Milvus ({i+1}/{max_retries})...")
+                connections.connect(
+                    alias="default",
+                    uri=self.cfg.MILVUS_URI  # 和你的配置完全一致
+                )
+                print("✅ Milvus 连接成功！")
+                break
+            except Exception as e:
+                if i < max_retries - 1:
+                    print(f"⚠ Milvus 连接失败，3秒后重试: {e}")
+                    time.sleep(3)
+                else:
+                    print("⚠ Milvus 连接失败，将仅使用 BM25 检索！")
+        self.vs = None
+        self.vec_retr = None
         collection_exists = False
 
         try:
@@ -64,26 +76,30 @@ class OpsRetriever:
         except Exception as e:
             print(f"⚠ 检查集合失败：{e}")
 
-        emb = DashScopeEmbeddings(model = self.cfg.EMBED_MODEL,dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
-        if collection_exists:
-            self.vs = Milvus(
-                embedding_function=emb,
-                collection_name=self.cfg.COLLECTION_NAME,
-                connection_args={"uri":self.cfg.MILVUS_URI}
-            )
-        else:
-            print("🆕 创建新的 Milvus 集合并导入数据...")
-            self.vs = Milvus.from_documents(self.splits,
-                                            emb,
-                                            collection_name=self.cfg.COLLECTION_NAME,
-                                            connection_args={"uri": self.cfg.MILVUS_URI}
-                                            )
         self.bm25 = BM25Retriever.from_documents(self.splits)
         self.bm25.k = 10
-        self.vec_retr = self.vs.as_retriever(search_kwargs={"k":10})
-        # print(f"\nbm25关键词检索： {self.bm25}")
-        # print(f"\nb向量库vec_retr检索： {self.vec_retr}")
-        self.ensemble = EnsembleRetriever(retrievers=[self.bm25,self.vec_retr],weights=[0.4,0.6])
+
+        try:
+            emb = DashScopeEmbeddings(model = self.cfg.EMBED_MODEL,dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
+            if collection_exists:
+                self.vs = Milvus(
+                    embedding_function=emb,
+                    collection_name=self.cfg.COLLECTION_NAME,
+                    connection_args={"uri":self.cfg.MILVUS_URI}
+                )
+            else:
+                print("🆕 创建新的 Milvus 集合并导入数据...")
+                self.vs = Milvus.from_documents(self.splits,
+                                                emb,
+                                                collection_name=self.cfg.COLLECTION_NAME,
+                                                connection_args={"uri": self.cfg.MILVUS_URI}
+                                                )
+            self.vec_retr = self.vs.as_retriever(search_kwargs={"k":10})
+            self.ensemble = EnsembleRetriever(retrievers=[self.bm25,self.vec_retr],weights=[0.4,0.6])
+            print("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
+        except Exception as e:
+            print(f"⚠ Milvus 初始化失败，仅使用 BM25 检索: {e}")
+            self.ensemble = None
 
     def retriever_and_rerank(self, query: str, top_k: int = 3) -> List[str]:
         docs = self.get_ensemble_rerank_docs(query,top_k)
@@ -92,8 +108,27 @@ class OpsRetriever:
             content = doc.page_content
             source = doc.metadata.get("source","位置文档")
             results.append(f"{source} {content}")
-        # print(f"\n转换为字符串格式的结果: {results}")
         return results
+
+    def retriever_and_rerank_with_scores(self, query: str, top_k: int = 3) -> List[tuple]:
+        if self.ensemble is not None:
+            try:
+                docs = self.ensemble.invoke(query)
+                docs = self._deduplicate(docs)
+                if docs:
+                    pairs = [(query, d.page_content) for d in docs]
+                    scores = self.reranker.predict(pairs)
+                    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+                    print(f"\nrerank_scores: {[f'{score:.4f}' for _, score in ranked[:top_k]]}")
+                    return [(doc, score) for doc, score in ranked[:top_k]]
+            except Exception as e:
+                print(f"⚠ 混合检索失败，降级到 BM25: {e}")
+        
+        print("📝 使用纯 BM25 检索...")
+        docs = self.get_bm25_docs(query, top_k)
+        # 给 BM25 结果一个默认的高分数（0.8）
+        return [(doc, 0.8) for doc in docs]
+
     def merge_chunks(self,chunks):
         merge = []
         current = None

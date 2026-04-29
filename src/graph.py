@@ -1,176 +1,244 @@
-from typing import List,TypedDict
-from langgraph.graph import StateGraph,START,END
+import os
+from typing import List, Dict, TypedDict
+from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from src.config import Config
 from src.retriever import OpsRetriever
-import subprocess
-import psutil
-from langchain_core.tools import tool, render_text_description
+from langchain_core.tools import tool
+from src.common_tools import (
+    server_system_check_logic,
+    port_check_logic,
+    read_service_log_logic,
+    knowledge_retriever_logic
+)
+
+retriever_instance = None
 
 
 class AgentState(TypedDict):
     query: str
-    context: List[str]
+    intent: str
+    rewritten_query: str
+    retrieved_context: str
+    tool_results: Dict[str, str]
     answer: str
-    tool_calls: List[str]
-    tool_results: List[str]
+    chat_history: List[str]
 
-# 【服务器cpu/内存/磁盘巡检】
+
 @tool
 def server_system_check() -> str:
-    """检查当前服务器的系统资源状态，包括CPU使用率、内存使用率、磁盘使用率和运行进程数。
+    """检查服务器CPU、内存、磁盘使用率和运行进程数。"""
+    return server_system_check_logic()
 
-    适用场景：
-    - 用户询问服务器性能问题（如"服务器卡顿"、"响应慢"、"负载高"）
-    - 用户要求查看系统资源使用情况（如"查看CPU/内存/磁盘状态"）
-    - 用户询问服务器健康状态（如"服务器是否正常"、"系统巡检"）
-    - 故障排查时需要了解系统资源瓶颈
 
-    返回格式：包含CPU、内存、磁盘的使用百分比及总量信息"""
-    try:
-        cpu_usage = psutil.cpu_percent(interval=1)
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        return f"""
-        【服务器系统巡检报告】
-        CPU使用率： {cpu_usage}%
-        内存使用率： {mem.percent}% (总内存： {round(mem.total/1024/1024/1024,2)}G)
-        磁盘使用率： {disk.percent}% (总内存： {round(disk.total/1024/1024/1024,2)}G)
-        运行进程数： {len(psutil.pids())}
-        """
-    except Exception as e:
-        return f"系统巡检失败： {str(e)}"
-
-# 【端口占用检测】
 @tool
-def port_check(port:int) -> str:
-    """检查指定端口是否被占用，返回占用该端口的进程信息和PID。
+def port_check(port: int) -> str:
+    """检查指定端口占用情况。参数：port-端口号(1-65535)"""
+    return port_check_logic(port)
 
-    适用场景：
-    - 用户询问某个端口是否可用（如"8080端口能用吗"、"3306端口是否被占用"）
-    - 服务启动失败需要排查端口冲突（如"Tomcat启动失败"、"MySQL无法启动"）
-    - 用户想知道哪个程序在使用某个端口（如"谁在用80端口"）
-    - 网络服务部署前的端口检查
 
-    参数说明：port - 要检查的端口号（整数，范围1-65535）
-    返回格式：端口占用信息及对应的进程名称和PID"""
-    try:
-        result = subprocess.check_output(f"net stat -tulpn | grep :{port}",shell=True,text=True)
-        return f"端口{port}占用信息:\n{result}"
-
-    except Exception as e:
-        return f"端口{port}未被占用"
-
-# 真实日志读取
 @tool
-def read_service_log(log_path: str = "/var/log/syslog",lines: int = 20) -> str:
-    """读取服务器上的日志文件内容，用于故障排查和问题分析。
+def read_service_log(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
+    """读取服务器日志文件。参数：log_path-日志路径，lines-读取行数"""
+    return read_service_log_logic(log_path, lines)
 
-        适用场景：
-        - 用户要求查看服务日志（如"查看nginx日志"、"显示最近的应用日志"）
-        - 服务异常需要分析错误信息（如"为什么服务崩溃了"、"查看报错日志"）
-        - 用户询问特定时间段的日志（如"查看最近的20行日志"）
-        - 排查服务启动失败、连接超时等问题
 
-        参数说明：
-        - log_path - 日志文件路径（默认/var/log/syslog，常见路径：/var/log/nginx/error.log、/var/log/mysql/error.log等）
-        - lines - 读取的行数（默认20行，可根据需要调整）
-
-        返回格式：日志文件的最后N行内容"""
-    try:
-        result = subprocess.check_output(f"tail -n {lines} {log_path}",shell=True,text=True)
-        return f"【日志内容】\n {result}"
-    except Exception as e:
-        return f"读取日志失败：{str(e)}"
-
-# 调用rag检索结结果
 @tool
-def knowledge_retrirver(query: str) -> str:
-    """从运维知识库中检索相关的故障解决方案、配置规范、最佳实践等文档内容。
+def knowledge_retriever(query: str) -> str:
+    """从运维知识库检索故障解决方案、配置规范等文档。参数：query-检索关键词"""
+    return knowledge_retriever_logic(query, retriever_instance)
 
-        适用场景：
-        - 用户询问故障处理方法（如"CPU使用率过高怎么办"、"MySQL连接超时如何解决"）
-        - 用户需要了解配置规范（如"Nginx如何配置负载均衡"、"Redis集群搭建步骤"）
-        - 用户查询运维标准和流程（如"数据库备份策略"、"服务器安全加固指南"）
-        - 任何需要参考历史经验或文档知识的运维问题
-
-        参数说明：query - 检索关键词或问题描述（应简洁明确，如"CPU过高"、"MySQL主从同步"）
-        返回格式：匹配的知识库文档片段（可能包含多个相关文档）
-
-        注意：当用户问题涉及具体故障处理、配置方法、运维规范时，应优先调用此工具获取专业知识"""
-    ctx = retriever_instance.retriever_and_rerank(query,top_k=3)
-    return "\n".join(ctx)
 
 def build_graph(retriever: OpsRetriever):
     global retriever_instance
     retriever_instance = retriever
 
     cfg = Config()
+
     llm = ChatOpenAI(
-        model = cfg.LLM_MODEL,
-        base_url = cfg.BASE_URL,
-        api_key = cfg.DASHSCOPE_API_KEY,
-        temperature=0.1,
+        model=cfg.LLM_MODEL,
+        base_url=cfg.BASE_URL,
+        api_key=cfg.DASHSCOPE_API_KEY,
+        temperature=0,
         streaming=True,
-        # model_kwargs={"lora_weights":"./lora-ops-model"}
     )
-    tools = [server_system_check,port_check,read_service_log,knowledge_retrirver]
-    llm_with_tools = llm.bind_tools(tools)
-    tools_map = {tool.name: tool for tool in tools}
-    print("构建提示词LLM中。。。。")
-    import os
-    prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),"prompts","ops_system.md")
-    with open(prompt_path,"r",encoding="utf-8") as f:
+
+    fast_llm = ChatOpenAI(
+        model=cfg.LLM_MODEL,
+        base_url=cfg.BASE_URL,
+        api_key=cfg.DASHSCOPE_API_KEY,
+        temperature=0,
+        streaming=False,
+    )
+
+    system_tools = [server_system_check, port_check, read_service_log]
+    llm_with_system_tools = llm.bind_tools(system_tools)
+    system_tools_map = {t.name: t for t in system_tools}
+
+    prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "ops_system.md")
+    with open(prompt_path, "r", encoding="utf-8") as f:
         sys_prompt = f.read()
 
-    print(f"可以使用的工具： {render_text_description(tools)}")
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ('system',sys_prompt + "\n\n你需要使用以下工具:\n" + render_text_description(tools)),
-            ('human','用户问题: {query}\n工具调用结果: {tool_results}')
-        ]
-    )
+    classify_prompt = ChatPromptTemplate.from_messages([
+        ('system', """你是运维问题分类器。根据用户问题判断意图类别，只输出类别名称：
 
-    def generate(state:AgentState):
-        """LLM决策节点：判断是否需要调用工具，或直接生成最终回答"""
-        print("\n...开始调用大模型中(tools已准备好)")
-        response = llm_with_tools.invoke(prompt.format_messages(
+        - fault: 需要查阅知识库的故障排查/配置方法/运维规范问题（如"CPU过高怎么办"、"Redis内存溢出"、"Nginx配置负载均衡"）
+        - system: 需要实时检查服务器状态的问题（如"查看CPU状态"、"检查8080端口"、"查看nginx日志"）
+        - mixed: 既需要知识库又需要实时检查的混合问题（如"服务器CPU高怎么排查"）
+        - followup: 基于历史对话的追问、澄清、引用之前话题的问题（如"上次问了什么"、"刚才那个问题再说一下"、"具体怎么操作"、"还有其他方法吗"、"帮我详细解释一下"）
+        - reject: 与运维完全无关的闲聊、娱乐、无关话题（如"讲个笑话"、"今天天气怎么样"）
+
+        只输出一个词：fault / system / mixed / followup / reject"""),
+        ('human', '用户问题: {query}\n\n最近对话历史:\n{chat_history}')
+    ])
+
+    rewrite_prompt = ChatPromptTemplate.from_messages([
+        ('system', """你是运维检索专家。将用户问题改写为更适合知识库检索的关键词。
+
+        要求：
+        1. 提取核心技术名词和故障关键词
+        2. 补充同义词和专业术语（如"内存满"→"OOM out-of-memory"）
+        3. 输出2-5个检索关键词，用空格分隔
+        4. 只输出改写后的关键词，不要解释
+
+        示例：
+        - "Redis内存满了怎么办" → "Redis OOM 内存溢出 maxmemory 淘汰策略"
+        - "服务器CPU使用率100%" → "CPU使用率过高 CPU满载 进程占用 top"
+        - "MySQL连接超时" → "MySQL连接超时 connection_timeout wait_timeout" """),
+        ('human', '{query}')
+    ])
+
+    generate_prompt = ChatPromptTemplate.from_messages([
+        ('system', sys_prompt + "\n\n特别注意：当用户问题是对之前对话的追问或引用时，必须基于历史对话内容回答，不要输出兜底文案。"),
+        ('human', '用户问题: {query}\n\n可用上下文:\n{context}\n\n历史对话:\n{chat_history}')
+    ])
+
+    tool_call_prompt = ChatPromptTemplate.from_messages([
+        ('system', '你是运维工具调用助手。根据用户问题调用合适的系统工具获取实时数据，只调用与问题相关的工具。'),
+        ('human', '用户问题: {query}')
+    ])
+
+    def classify(state: AgentState):
+        print(f"\n[classify] 分类中... query: {state['query']}")
+        chat_history = state.get("chat_history", [])
+        history_str = "\n".join(chat_history[-6:]) if chat_history else "无历史对话"
+        response = fast_llm.invoke(classify_prompt.format_messages(
             query=state["query"],
-            tool_results=state.get("tool_results",[])
+            chat_history=history_str
         ))
-        print(f"本次LLM节点调用工具为： {response.tool_calls}")
+        intent = response.content.strip().lower()
+        if intent not in ["fault", "system", "mixed", "followup", "reject"]:
+            intent = "fault"
+        print(f"[classify] 结果: {intent}")
+        return {"intent": intent}
+
+    def rewrite_query(state: AgentState):
+        print(f"\n[rewrite_query] 改写中... query: {state['query']}")
+        response = fast_llm.invoke(rewrite_prompt.format_messages(query=state["query"]))
+        rewritten = response.content.strip()
+        print(f"[rewrite_query] 结果: {rewritten}")
+        return {"rewritten_query": rewritten}
+
+    def retrieve(state: AgentState):
+        query = state.get("rewritten_query") or state["query"]
+        print(f"\n[retrieve] 检索中... query: {query}")
+        results = knowledge_retriever_logic(query, retriever_instance)
+        print(f"[retrieve] 完成, 结果长度: {len(results)} \n 结果为: {results}")
+        return {"retrieved_context": results}
+
+    def execute_tools(state: AgentState):
+        print(f"\n[execute_tools] 执行中... query: {state['query']}")
+        response = llm_with_system_tools.invoke(
+            tool_call_prompt.format_messages(query=state["query"])
+        )
+        results = {}
         if response.tool_calls:
-            return {"tool_calls":response.tool_calls}
-        else:
-            return {"answer":response.content,"tool_calls":[]}
+            for tc in response.tool_calls:
+                tool_fn = system_tools_map[tc["name"]]
+                result = tool_fn.invoke(tc["args"])
+                results[tc["name"]] = result
+                print(f"[execute_tools] 工具: {tc['name']}, 参数: {tc['args']}")
+        print(f"[execute_tools] 完成, 调用 {len(results)} 个工具")
+        return {"tool_results": results}
 
-    def tool_node(state:AgentState):
-        """工具执行节点： 执行LLM决定的工具调用，并返回结果"""
-        results = []
-        for tool_call in state["tool_calls"]:
-            tool = tools_map[tool_call["name"]]
-            result = tool.invoke(tool_call["args"])
-            results.append(result)
-        print(f"调用工具完毕，输出： {results}")
-        return {"tool_results":results,"tool_calls":[]}
+    def generate(state: AgentState):
+        print(f"\n[generate] 生成回答中...")
+        context_parts = []
+        if state.get("retrieved_context"):
+            context_parts.append(f"【知识库检索结果】\n{state['retrieved_context']}")
+        if state.get("tool_results"):
+            for tool_name, result in state["tool_results"].items():
+                context_parts.append(f"【工具 {tool_name} 执行结果】\n{result}")
+        context = "\n\n".join(context_parts) if context_parts else "无可用上下文信息"
 
-    def should_continue(state: AgentState):
-        if state.get("tool_calls"):
-            return "tools"
-        return END
+        chat_history = state.get("chat_history", [])
+        history_str = "\n".join(chat_history[-6:]) if chat_history else "无历史对话"
+
+        messages = generate_prompt.format_messages(
+            query=state["query"],
+            context=context,
+            chat_history=history_str
+        )
+        response = llm.invoke(messages)
+        print(f"[generate] 完成")
+        return {"answer": response.content}
+
+    def reject(state: AgentState):
+        print(f"\n[reject] 拒绝非运维问题")
+        return {"answer": "当前知识库未覆盖该问题，建议转交人工运维专家。"}
+
+    def route_by_intent(state: AgentState):
+        intent = state.get("intent", "fault")
+        if intent == "reject":
+            return "reject"
+        elif intent == "followup":
+            return "generate"
+        elif intent == "fault":
+            return "rewrite_query"
+        elif intent == "system":
+            return "execute_tools"
+        elif intent == "mixed":
+            return "rewrite_query"
+        return "rewrite_query"
+
+    def route_after_rewrite(state: AgentState):
+        return "retrieve"
+
+    def route_after_retrieve(state: AgentState):
+        if state.get("intent") == "mixed":
+            return "execute_tools"
+        return "generate"
+
     workflow = StateGraph(AgentState)
-    workflow.add_node("generate",generate)
-    workflow.add_node("tools",tool_node)
-    workflow.add_edge(START,"generate")
-    workflow.add_conditional_edges(
-        "generate",
-        should_continue,
-        {
-            "tools":"tools",
-            END:END
-        }
 
-    )
-    workflow.add_edge("tools","generate")
+    workflow.add_node("classify", classify)
+    workflow.add_node("rewrite_query", rewrite_query)
+    workflow.add_node("retrieve", retrieve)
+    workflow.add_node("execute_tools", execute_tools)
+    workflow.add_node("generate", generate)
+    workflow.add_node("reject", reject)
+
+    workflow.add_edge(START, "classify")
+
+    workflow.add_conditional_edges("classify", route_by_intent, {
+        "rewrite_query": "rewrite_query",
+        "execute_tools": "execute_tools",
+        "generate": "generate",
+        "reject": "reject",
+    })
+
+    workflow.add_conditional_edges("rewrite_query", route_after_rewrite, {
+        "retrieve": "retrieve",
+    })
+
+    workflow.add_conditional_edges("retrieve", route_after_retrieve, {
+        "execute_tools": "execute_tools",
+        "generate": "generate",
+    })
+
+    workflow.add_edge("execute_tools", "generate")
+    workflow.add_edge("generate", END)
+    workflow.add_edge("reject", END)
+
     return workflow.compile()

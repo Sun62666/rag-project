@@ -9,7 +9,7 @@ class Config:
     DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
     BASE_URL = os.getenv("BASE_URL")
     MILVUS_URI = os.getenv("MILVUS_URL")
-    LLM_MODEL = "qwen3.6-plus"
+    LLM_MODEL = "qwen3.5-plus"
     REDIS_URL = os.getenv("REDIS_URL")
     COLLECTION_NAME = "ops_knowledge_v2"
     EMBED_MODEL = "text-embedding-v2"

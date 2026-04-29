@@ -5,66 +5,124 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能运维助手 - 流式输出</title>
     <style>
-        body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; background: #f5f7fa; }
-        .container { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { color: #1a1a1a; margin-bottom: 20px; }
-        .input-group { display: flex; gap: 12px; margin-bottom: 20px; }
-        input { flex: 1; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; outline: none; transition: border-color 0.3s; }
-        input:focus { border-color: #007bff; }
-        button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; transition: background 0.3s; }
-        button:hover:not(:disabled) { background: #0056b3; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .status { font-size: 14px; color: #666; margin-bottom: 12px; height: 20px; }
-        .status.loading { color: #007bff; }
-        .status.done { color: #28a745; }
-        #output { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; min-height: 150px; background: #fafbfc; white-space: pre-wrap; line-height: 1.6; color: #333; overflow-y: auto; max-height: 500px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f7fa; height: 100vh; display: flex; flex-direction: column; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
+        h1 { color: #1a1a1a; font-size: 22px; }
+        .header-actions { display: flex; gap: 8px; }
+        .btn-sm { padding: 6px 14px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.3s; }
+        .btn-sm:hover { background: #5a6268; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 12px; }
+        .message { margin-bottom: 16px; display: flex; gap: 10px; }
+        .message.user { justify-content: flex-end; }
+        .bubble { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .message.user .bubble { background: #007bff; color: white; border-bottom-right-radius: 4px; }
+        .message.assistant .bubble { background: #f0f2f5; color: #333; border-bottom-left-radius: 4px; }
+        .status-bar { font-size: 13px; color: #888; padding: 4px 0; min-height: 22px; }
+        .status-bar.loading { color: #007bff; }
+        .status-bar.done { color: #28a745; }
+        .input-area { display: flex; gap: 10px; padding: 12px 0; }
+        .input-area input { flex: 1; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; outline: none; transition: border-color 0.3s; }
+        .input-area input:focus { border-color: #007bff; }
+        .input-area button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; transition: background 0.3s; white-space: nowrap; }
+        .input-area button:hover:not(:disabled) { background: #0056b3; }
+        .input-area button:disabled { background: #ccc; cursor: not-allowed; }
         .typing-cursor::after { content: '▊'; animation: blink 1s infinite; }
         @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
+    <div class="header">
         <h1>🤖 智能运维助手</h1>
-        <div class="input-group">
-            <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题，如：为什么Linux 服务器 CPU 使用率持续 100% ？">
-            <button @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发送' }}</button>
+        <div class="header-actions">
+            <button class="btn-sm" @click="clearHistory">清空对话</button>
+            <button class="btn-sm" @click="newSession">新会话</button>
         </div>
-        <div :class="['status', statusClass]">{{ statusText }}</div>
-        <div ref="outputRef" id="output" :class="{ 'typing-cursor': isLoading }">{{ answer || '等待输出问题...' }}</div>
+    </div>
+
+    <div class="chat-container" ref="chatRef">
+        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
+            <div class="bubble" :class="{ 'typing-cursor': isLoading && idx === messages.length - 1 && msg.role === 'assistant' }">{{ msg.content }}</div>
+        </div>
+        <div v-if="messages.length === 0" style="text-align:center;color:#aaa;padding:40px 0;">输入运维问题开始对话</div>
+    </div>
+
+    <div :class="['status-bar', statusClass]">{{ statusText }}</div>
+
+    <div class="input-area">
+        <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题，如：为什么Linux服务器CPU使用率持续100%？">
+        <button @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发送' }}</button>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script>
-        const { createApp, ref, nextTick } = Vue
+        const { createApp, ref, nextTick, onMounted } = Vue
         createApp({
             setup() {
-                const query = ref('为什么Linux 服务器 CPU 使用率持续 100% ？')
-                const answer = ref('')
+                const query = ref('')
+                const messages = ref([])
                 const statusText = ref('')
                 const statusClass = ref('')
                 const isLoading = ref(false)
-                const outputRef = ref(null)
+                const chatRef = ref(null)
+                const sessionId = ref('default')
+                const API_BASE = 'http://192.168.100.128:8347'
 
-                // 自动滚动到输出框底部
                 const scrollToBottom = async () => {
                     await nextTick()
-                    if(outputRef.value){
-                        outputRef.value.scrollTop = outputRef.value.scrollHeight
+                    if (chatRef.value) {
+                        chatRef.value.scrollTop = chatRef.value.scrollHeight
                     }
+                }
+
+                onMounted(async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/new_session`, { method: 'POST' })
+                        const data = await res.json()
+                        sessionId.value = data.session_id
+                    } catch (e) {
+                        sessionId.value = 'default'
+                    }
+                })
+
+                async function newSession() {
+                    try {
+                        const res = await fetch(`${API_BASE}/new_session`, { method: 'POST' })
+                        const data = await res.json()
+                        sessionId.value = data.session_id
+                    } catch (e) {}
+                    messages.value = []
+                    statusText.value = ''
+                    statusClass.value = ''
+                }
+
+                async function clearHistory() {
+                    try {
+                        await fetch(`${API_BASE}/clear_history?session_id=${sessionId.value}`, { method: 'POST' })
+                    } catch (e) {}
+                    messages.value = []
+                    statusText.value = ''
+                    statusClass.value = ''
                 }
 
                 async function sendQuery() {
                     if (!query.value.trim() || isLoading.value) return
                     isLoading.value = true
-                    answer.value = ''
+                    const userQuery = query.value
+                    query.value = ''
+
+                    messages.value.push({ role: 'user', content: userQuery })
+                    messages.value.push({ role: 'assistant', content: '' })
+                    const assistantIdx = messages.value.length - 1
                     statusText.value = '⏳ 正在连接...'
                     statusClass.value = 'loading'
+                    scrollToBottom()
 
                     try {
-                        const response = await fetch('http://192.168.100.128:8347/ask', {
+                        const response = await fetch(`${API_BASE}/ask`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: query.value })
+                            body: JSON.stringify({ query: userQuery, session_id: sessionId.value })
                         })
 
                         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -72,10 +130,6 @@
                         const reader = response.body.getReader()
                         const decoder = new TextDecoder()
                         let buffer = ''
-
-                        statusText.value = '📡 接收中...'
-                        // 发送后清空输入框
-                        query.value = ''
 
                         while (true) {
                             const { done, value } = await reader.read()
@@ -91,20 +145,14 @@
                                         const data = JSON.parse(line.slice(6))
                                         if (data.type === 'status') {
                                             statusText.value = data.message
-                                        }
-                                        else if (data.type === 'token') {
-                                            answer.value += data.content
+                                        } else if (data.type === 'token') {
+                                            messages.value[assistantIdx].content += data.content
                                             scrollToBottom()
                                         } else if (data.type === 'done') {
-                                            if(data.from_cache){
-                                                statusText.value = '✅ 已从缓存中检索到解决方案'
-                                                statusClass.value = 'done'
-                                            }
-                                            else{
-                                                statusText.value = '✅ 已完成检索调用输出解决方案'
-                                                statusClass.value = 'done'
-                                            }
-                                            
+                                            statusText.value = data.from_cache
+                                                ? '✅ 已从缓存中检索到解决方案'
+                                                : '✅ 已完成检索调用输出解决方案'
+                                            statusClass.value = 'done'
                                         }
                                     } catch (e) {
                                         console.warn('解析跳过:', line)
@@ -114,15 +162,15 @@
                         }
                     } catch (error) {
                         statusText.value = `❌ 错误: ${error.message}`
-                        answer.value = `请求失败: ${error.message}`
+                        messages.value[assistantIdx].content = `请求失败: ${error.message}`
                     } finally {
                         isLoading.value = false
                     }
                 }
 
-                return { query, answer, statusText, statusClass, isLoading, sendQuery, outputRef  }
+                return { query, messages, statusText, statusClass, isLoading, sendQuery, chatRef, newSession, clearHistory }
             }
-        }).mount('#app')
+        }).mount('body')
     </script>
 </body>
 </html>

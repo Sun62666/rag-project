@@ -78,7 +78,8 @@ services:
     depends_on:
       milvus-standalone:
         condition: service_healthy
-
+    networks:
+      - rag-network
 
   redis:
     container_name: rag-redis

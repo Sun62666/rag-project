@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Dict, TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -12,6 +13,7 @@ from src.common_tools import (
     read_service_log_logic,
     knowledge_retriever_logic
 )
+logger = logging.getLogger(__name__)
 
 retriever_instance = None
 
@@ -118,74 +120,109 @@ def build_graph(retriever: OpsRetriever):
         ('system', '你是运维工具调用助手。根据用户问题调用合适的系统工具获取实时数据，只调用与问题相关的工具。'),
         ('human', '用户问题: {query}')
     ])
+    classify_chain = classify_prompt | fast_llm
+    rewrite_chain = rewrite_prompt | fast_llm
+    generate_chain = generate_prompt | llm
+    tool_chain = tool_call_prompt | llm_with_system_tools
 
     def classify(state: AgentState):
-        print(f"\n[classify] 分类中... query: {state['query']}")
+        logger.info(f"[classify] 分类中... query: {state['query']}")
+
         chat_history = state.get("chat_history", [])
         history_str = "\n".join(chat_history[-6:]) if chat_history else "无历史对话"
-        response = fast_llm.invoke(classify_prompt.format_messages(
-            query=state["query"],
-            chat_history=history_str
-        ))
+
+        # response = fast_llm.invoke(classify_prompt.format_messages(
+        #     query=state["query"],
+        #     chat_history=history_str
+        # ))
+        response = classify_chain.invoke({
+            "query":state["query"],
+            "chat_history":history_str
+        })
+
         intent = response.content.strip().lower()
+        logger.info(f"[classify] 非默认结果: {intent}")
+
         if intent not in ["fault", "system", "mixed", "followup", "reject"]:
             intent = "fault"
-        print(f"[classify] 结果: {intent}")
+        logger.info(f"[classify] 默认结果: {intent}")
+
         return {"intent": intent}
 
     def rewrite_query(state: AgentState):
-        print(f"\n[rewrite_query] 改写中... query: {state['query']}")
-        response = fast_llm.invoke(rewrite_prompt.format_messages(query=state["query"]))
+        logger.info(f"[rewrite_query] 改写中... query: {state['query']}")
+
+        # response = fast_llm.invoke(rewrite_prompt.format_messages(query=state["query"]))
+        response = rewrite_chain.invoke({"query":state["query"]})
         rewritten = response.content.strip()
-        print(f"[rewrite_query] 结果: {rewritten}")
+
+        logger.info(f"[rewrite_query] 结果: {rewritten}")
         return {"rewritten_query": rewritten}
 
     def retrieve(state: AgentState):
         query = state.get("rewritten_query") or state["query"]
-        print(f"\n[retrieve] 检索中... query: {query}")
+
+        logger.info(f"[retrieve] 检索中... query: {query}")
         results = knowledge_retriever_logic(query, retriever_instance)
-        print(f"[retrieve] 完成, 结果长度: {len(results)} \n 结果为: {results}")
+
+        logger.info(f"[retrieve] 完成, 结果长度: {len(results)} \n 结果为: {results}")
         return {"retrieved_context": results}
 
     def execute_tools(state: AgentState):
-        print(f"\n[execute_tools] 执行中... query: {state['query']}")
-        response = llm_with_system_tools.invoke(
-            tool_call_prompt.format_messages(query=state["query"])
-        )
+        logger.info(f"[execute_tools] 执行中... query: {state['query']}")
+
+        # response = llm_with_system_tools.invoke(
+        #     tool_call_prompt.format_messages(query=state["query"])
+        # )
+        response = tool_chain.invoke({"query":state["query"]})
+
         results = {}
+
         if response.tool_calls:
             for tc in response.tool_calls:
+
                 tool_fn = system_tools_map[tc["name"]]
                 result = tool_fn.invoke(tc["args"])
                 results[tc["name"]] = result
-                print(f"[execute_tools] 工具: {tc['name']}, 参数: {tc['args']}")
-        print(f"[execute_tools] 完成, 调用 {len(results)} 个工具")
+
+                logger.info(f"[execute_tools] 工具: {tc['name']}, 参数: {tc['args']}")
+
+        logger.info(f"[execute_tools] 完成, 调用 {len(results)} 个工具")
         return {"tool_results": results}
 
     def generate(state: AgentState):
-        print(f"\n[generate] 生成回答中...")
+        logger.info(f"[generate] 生成回答中...")
+
         context_parts = []
+
         if state.get("retrieved_context"):
             context_parts.append(f"【知识库检索结果】\n{state['retrieved_context']}")
+
         if state.get("tool_results"):
             for tool_name, result in state["tool_results"].items():
                 context_parts.append(f"【工具 {tool_name} 执行结果】\n{result}")
+
         context = "\n\n".join(context_parts) if context_parts else "无可用上下文信息"
 
         chat_history = state.get("chat_history", [])
         history_str = "\n".join(chat_history[-6:]) if chat_history else "无历史对话"
 
-        messages = generate_prompt.format_messages(
-            query=state["query"],
-            context=context,
-            chat_history=history_str
-        )
-        response = llm.invoke(messages)
-        print(f"[generate] 完成")
+        # messages = generate_prompt.format_messages(
+        #     query=state["query"],
+        #     context=context,
+        #     chat_history=history_str
+        # )
+        # response = llm.invoke(messages)
+        response = generate_chain.invoke({
+            "query":state["query"],
+            "context":context,
+            "chat_history":history_str
+        })
+        logger.info(f"[generate] 完成")
         return {"answer": response.content}
 
     def reject(state: AgentState):
-        print(f"\n[reject] 拒绝非运维问题")
+        logger.info(f"[reject] 拒绝非运维问题")
         return {"answer": "当前知识库未覆盖该问题，建议转交人工运维专家。"}
 
     def route_by_intent(state: AgentState):

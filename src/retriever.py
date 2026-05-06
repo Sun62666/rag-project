@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import re
 import time
 from langchain_community.document_loaders import PyPDFLoader
@@ -12,6 +13,7 @@ from sentence_transformers import CrossEncoder
 from pymilvus import connections,Collection,utility
 from typing import List
 from src.config import Config
+logger = logging.getLogger(__name__)
 class OpsRetriever:
     _instance = None
     def __new__(cls, pdf_path: str):
@@ -19,89 +21,110 @@ class OpsRetriever:
             cls._instance = super().__new__(cls)
             cls._instance.initialized = False
         return cls._instance
+
     def __init__(self,pdf_path: str):
+
         if self.initialized:
             return
+
         self.cfg = Config()
-        print("\n初始化配置成功。。。。")
+        logger.info("初始化配置成功。。。。")
+
         if pdf_path:
             self._split_docs(pdf_path)
-            print("划分文档成功。。。。")
+            logger.info("划分文档成功。。。。")
+
             self._inject_doc_ids()
-            print("注入doc_id成功。。。。")
+            logger.info("注入doc_id成功。。。。")
+
         else:
-            print("pdf_path为None，划分文档失败。。。。")
+            logger.info("pdf_path为None，划分文档失败。。。。")
+
         self._init_retrievers()
-        print("检索其初始化成功。。。。")
+        logger.info("检索其初始化成功。。。。")
+
         self.reranker = CrossEncoder(self.cfg.RERANK_MODEL)
-        print("重排序模型创建成功。。。。")
+        logger.info("重排序模型创建成功。。。。")
+
         self.initialized = True
+
     def _split_docs(self,path: str):
         docs = PyPDFLoader(path).load()
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=60,separators=["\n案例 ","\n案例","案例","\n\n","\n","。"," ",""])
+
         self.splits = splitter.split_documents(docs)
         # print(f"原来未合并文档： {self.splits[:2]}")
         self.splits = self.merge_chunks(self.splits)
         # print(f"已经合并文档： {self.splits[:2]}")
-        print(f"\n长度为： {len(self.splits)}  划分数据成果： {self.splits[:2]} ")
+        logger.info(f"长度为： {len(self.splits)}  划分数据成果： {self.splits[:2]} ")
 
     def _init_retrievers(self):
         max_retries = 10
         for i in range(max_retries):
             try:
-                print(f"尝试连接 Milvus ({i+1}/{max_retries})...")
+                logger.info(f"尝试连接 Milvus ({i+1}/{max_retries})...")
                 connections.connect(
                     alias="default",
                     uri=self.cfg.MILVUS_URI  # 和你的配置完全一致
                 )
-                print("✅ Milvus 连接成功！")
+                logger.info("✅ Milvus 连接成功！")
                 break
             except Exception as e:
                 if i < max_retries - 1:
-                    print(f"⚠ Milvus 连接失败，3秒后重试: {e}")
+                    logger.error(f"⚠ Milvus 连接失败，3秒后重试: {e}")
                     time.sleep(3)
                 else:
-                    print("⚠ Milvus 连接失败，将仅使用 BM25 检索！")
+                    logger.error("⚠ Milvus 连接失败，将仅使用 BM25 检索！")
         self.vs = None
         self.vec_retr = None
         collection_exists = False
 
         try:
             if utility.has_collection(self.cfg.COLLECTION_NAME):
-                print("---检测到现有向量库--")
+
+                logger.info("---检测到现有向量库--")
                 collection = Collection(self.cfg.COLLECTION_NAME)
+
                 if collection.num_entities > 0:
                     collection_exists = True
-                    print(f"√ 检测到现有向量库（{collection.num_entities} 条数据），跳过重建")
+                    logger.info(f"√ 检测到现有向量库（{collection.num_entities} 条数据），跳过重建")
+
         except Exception as e:
-            print(f"⚠ 检查集合失败：{e}")
+            logger.error(f"⚠ 检查集合失败：{e}")
 
         self.bm25 = BM25Retriever.from_documents(self.splits)
         self.bm25.k = 10
 
         try:
+
             emb = DashScopeEmbeddings(model = self.cfg.EMBED_MODEL,dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
+
             if collection_exists:
                 self.vs = Milvus(
                     embedding_function=emb,
                     collection_name=self.cfg.COLLECTION_NAME,
                     connection_args={"uri":self.cfg.MILVUS_URI}
                 )
+
             else:
-                print("🆕 创建新的 Milvus 集合并导入数据...")
+                logger.info("🆕 创建新的 Milvus 集合并导入数据...")
                 self.vs = Milvus.from_documents(self.splits,
                                                 emb,
                                                 collection_name=self.cfg.COLLECTION_NAME,
                                                 connection_args={"uri": self.cfg.MILVUS_URI}
                                                 )
+
             self.vec_retr = self.vs.as_retriever(search_kwargs={"k":10})
             self.ensemble = EnsembleRetriever(retrievers=[self.bm25,self.vec_retr],weights=[0.4,0.6])
-            print("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
+            logger.info("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
+
         except Exception as e:
-            print(f"⚠ Milvus 初始化失败，仅使用 BM25 检索: {e}")
+            logger.error(f"⚠ Milvus 初始化失败，仅使用 BM25 检索: {e}")
             self.ensemble = None
 
     def retriever_and_rerank(self, query: str, top_k: int = 3) -> List[str]:
+
         docs = self.get_ensemble_rerank_docs(query,top_k)
         results = []
         for doc in docs:
@@ -119,12 +142,12 @@ class OpsRetriever:
                     pairs = [(query, d.page_content) for d in docs]
                     scores = self.reranker.predict(pairs)
                     ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
-                    print(f"\nrerank_scores: {[f'{score:.4f}' for _, score in ranked[:top_k]]}")
+                    logger.info(f"\nrerank_scores: {[f'{score:.4f}' for _, score in ranked[:top_k]]}")
                     return [(doc, score) for doc, score in ranked[:top_k]]
             except Exception as e:
-                print(f"⚠ 混合检索失败，降级到 BM25: {e}")
+                logger.error(f"⚠ 混合检索失败，降级到 BM25: {e}")
         
-        print("📝 使用纯 BM25 检索...")
+        logger.info("📝 使用纯 BM25 检索...")
         docs = self.get_bm25_docs(query, top_k)
         # 给 BM25 结果一个默认的高分数（0.8）
         return [(doc, 0.8) for doc in docs]
@@ -143,6 +166,7 @@ class OpsRetriever:
         if current:
             merge.append(current)
         return merge
+
     def _deduplicate(self, docs: List[Document]) -> List[Document]:
         """与线上完全一致的去重逻辑，评估时复用保证公平"""
         seen, unique = set(), []
@@ -152,7 +176,7 @@ class OpsRetriever:
                 unique.append(doc)
                 seen.add(doc.page_content)
         if not unique:
-            print("\n❌ 无检索结果")
+            logger.info("\n❌ 无检索结果")
             return []
         # print(f"\nseen: {seen}")
         # print(f"\nunique: {unique[:2]}")
@@ -182,16 +206,18 @@ class OpsRetriever:
         return self._deduplicate(docs)[:top_k]
 
     def get_ensemble_rerank_docs(self, query: str, top_k: int = 3) -> List[Document]:
+
         docs = self.ensemble.invoke(query)
         docs = self._deduplicate(docs)
         if not docs: return []
+
         # 复用线上重排序逻辑
-        print(f"\n==================== 重排序后最终结果 ====================")
+        logger.info(f"\n==================== 重排序后最终结果 ====================")
         pairs = [(query, d.page_content) for d in docs]
         scores = self.reranker.predict(pairs)
         ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
         # print(f"\npairs: {pairs[:2]}")
-        print(f"\nrerank_scores: {[score for _,score in ranked[:2]]}")
+        logger.info(f"\nrerank_scores: {[score for _,score in ranked[:top_k]]}")
         # print(f"\nranked_docs: {ranked[:2]}")
 
         result = [doc for doc, score in ranked[:top_k]]

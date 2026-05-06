@@ -14,4 +14,5 @@ class Config:
     COLLECTION_NAME = "ops_knowledge_v2"
     EMBED_MODEL = "text-embedding-v2"
     RERANK_MODEL = rerank_path
-    CACHE_TTL = 3600
+    CACHE_TTL_SHOT = 3600*24*7
+    CACHE_TTL_LONG = 3600*24*30

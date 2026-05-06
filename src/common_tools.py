@@ -6,7 +6,7 @@ def server_system_check_logic() -> str:
     try:
         cpu_usage = psutil.cpu_percent(interval=1)
         mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage('C:\\')
         return (
             f"【服务器系统巡检报告】\n"
             f"CPU使用率：{cpu_usage}%\n"

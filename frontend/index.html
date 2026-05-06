@@ -3,60 +3,397 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能运维助手 - 流式输出</title>
+    <title>SmartOps 智能运维助手</title>
     <style>
+        :root {
+            --primary: #4f6ef7;
+            --primary-hover: #3b5de7;
+            --primary-light: #eef1fe;
+            --danger: #e74c3c;
+            --danger-light: #fdecea;
+            --bg: #f0f2f5;
+            --sidebar-bg: #1e1f26;
+            --sidebar-text: #c5c7ce;
+            --sidebar-active: #2d2e38;
+            --card-bg: #ffffff;
+            --text: #1a1a2e;
+            --text-secondary: #6b7280;
+            --border: #e5e7eb;
+            --shadow: 0 2px 12px rgba(0,0,0,0.08);
+            --radius: 10px;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f7fa; height: 100vh; display: flex; flex-direction: column; }
-        .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
-        h1 { color: #1a1a1a; font-size: 22px; }
-        .header-actions { display: flex; gap: 8px; }
-        .btn-sm { padding: 6px 14px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.3s; }
-        .btn-sm:hover { background: #5a6268; }
-        .chat-container { flex: 1; overflow-y: auto; padding: 16px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 12px; }
-        .message { margin-bottom: 16px; display: flex; gap: 10px; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* ========== 左侧深色侧边栏 ========== */
+        .sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            color: var(--sidebar-text);
+        }
+
+        .sidebar-header {
+            padding: 20px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .sidebar-logo {
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-logo span { font-size: 20px; }
+
+        .new-session-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .new-session-btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
+
+        .sessions-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .sessions-list::-webkit-scrollbar { width: 4px; }
+        .sessions-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+        .session-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 2px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            position: relative;
+        }
+
+        .session-item:hover { background: var(--sidebar-active); }
+
+        .session-item.active {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .session-item.active .session-delete { color: rgba(255,255,255,0.7); }
+        .session-item.active .session-delete:hover { color: #fff; background: rgba(255,255,255,0.15); }
+        .session-item.active .session-time { color: rgba(255,255,255,0.6); }
+
+        .session-icon { font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+
+        .session-info { flex: 1; min-width: 0; }
+
+        .session-title {
+            font-size: 13px;
+            color: inherit;
+            word-break: break-all;
+            line-height: 1.4;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .session-time {
+            font-size: 11px;
+            color: rgba(255,255,255,0.3);
+            margin-top: 3px;
+        }
+
+        .session-delete {
+            padding: 2px 6px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.3);
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .session-item:hover .session-delete { opacity: 1; }
+        .session-delete:hover { color: var(--danger); background: var(--danger-light); }
+
+        .sessions-empty {
+            text-align: center;
+            color: rgba(255,255,255,0.25);
+            padding: 40px 0;
+            font-size: 13px;
+        }
+
+        /* ========== 右侧主区域 ========== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 24px;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .top-bar-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .top-bar-actions { display: flex; gap: 8px; }
+
+        .btn-outline {
+            padding: 6px 14px;
+            background: transparent;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-outline:hover { background: var(--primary-light); }
+
+        .btn-outline.danger {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .btn-outline.danger:hover { background: var(--danger-light); }
+
+        /* ========== 聊天区域 ========== */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-container::-webkit-scrollbar { width: 6px; }
+        .chat-container::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
         .message.user { justify-content: flex-end; }
-        .bubble { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-        .message.user .bubble { background: #007bff; color: white; border-bottom-right-radius: 4px; }
-        .message.assistant .bubble { background: #f0f2f5; color: #333; border-bottom-left-radius: 4px; }
-        .status-bar { font-size: 13px; color: #888; padding: 4px 0; min-height: 22px; }
-        .status-bar.loading { color: #007bff; }
-        .status-bar.done { color: #28a745; }
-        .input-area { display: flex; gap: 10px; padding: 12px 0; }
-        .input-area input { flex: 1; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; outline: none; transition: border-color 0.3s; }
-        .input-area input:focus { border-color: #007bff; }
-        .input-area button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; transition: background 0.3s; white-space: nowrap; }
-        .input-area button:hover:not(:disabled) { background: #0056b3; }
-        .input-area button:disabled { background: #ccc; cursor: not-allowed; }
-        .typing-cursor::after { content: '▊'; animation: blink 1s infinite; }
+
+        .avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .message.assistant .avatar { background: var(--primary-light); }
+        .message.user .avatar { background: #fef3c7; order: 1; }
+
+        .bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 14px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 14px;
+        }
+
+        .message.user .bubble {
+            background: var(--primary);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .bubble {
+            background: var(--card-bg);
+            color: var(--text);
+            border-bottom-left-radius: 4px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .typing-cursor::after {
+            content: '▊';
+            animation: blink 1s infinite;
+            color: var(--primary);
+        }
+
         @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+        .empty-state {
+            text-align: center;
+            padding: 100px 20px;
+        }
+
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+
+        .empty-state-title {
+            font-size: 18px;
+            color: var(--text);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .empty-state-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* ========== 状态栏 ========== */
+        .status-bar {
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 4px 24px;
+            min-height: 24px;
+        }
+
+        .status-bar.loading { color: var(--primary); }
+        .status-bar.done { color: #10b981; }
+
+        /* ========== 输入区域 ========== */
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 16px 24px 20px;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border);
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: var(--bg);
+        }
+
+        .input-area input:focus { border-color: var(--primary); background: #fff; }
+
+        .send-btn {
+            padding: 12px 28px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .send-btn:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
+        .send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🤖 智能运维助手</h1>
-        <div class="header-actions">
-            <button class="btn-sm" @click="clearHistory">清空对话</button>
-            <button class="btn-sm" @click="newSession">新会话</button>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo"><span>🤖</span> SmartOps</div>
+            <button class="new-session-btn" @click="newSession">＋ 新建会话</button>
+        </div>
+        <div class="sessions-list">
+            <div
+                v-for="sess in sessions"
+                :key="sess.session_id"
+                :class="['session-item', { active: sess.session_id === currentSessionId }]"
+                @click="switchSession(sess.session_id)"
+            >
+                <span class="session-icon">💬</span>
+                <div class="session-info">
+                    <div class="session-title">{{ sess.title }}</div>
+                    <div class="session-time">{{ sess.updated_at || sess.created_at || '' }}</div>
+                </div>
+                <button class="session-delete" @click.stop="deleteSession(sess.session_id)" title="删除会话">×</button>
+            </div>
+            <div v-if="sessions.length === 0" class="sessions-empty">暂无历史会话</div>
         </div>
     </div>
 
-    <div class="chat-container" ref="chatRef">
-        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
-            <div class="bubble" :class="{ 'typing-cursor': isLoading && idx === messages.length - 1 && msg.role === 'assistant' }">{{ msg.content }}</div>
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">{{ currentTitle }}</div>
+            <div class="top-bar-actions">
+                <button class="btn-outline danger" @click="clearCurrentHistory">清空对话</button>
+                <button class="btn-outline" @click="loadSessions">刷新列表</button>
+            </div>
         </div>
-        <div v-if="messages.length === 0" style="text-align:center;color:#aaa;padding:40px 0;">输入运维问题开始对话</div>
-    </div>
 
-    <div :class="['status-bar', statusClass]">{{ statusText }}</div>
+        <div class="chat-container" ref="chatRef">
+            <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
+                <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
+                <div class="bubble" :class="{ 'typing-cursor': isLoading && idx === messages.length - 1 && msg.role === 'assistant' }">{{ msg.content }}</div>
+            </div>
+            <div v-if="messages.length === 0" class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <div class="empty-state-title">智能运维助手</div>
+                <div class="empty-state-desc">输入运维问题，如：为什么Linux服务器CPU使用率持续100%？</div>
+            </div>
+        </div>
 
-    <div class="input-area">
-        <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题，如：为什么Linux服务器CPU使用率持续100%？">
-        <button @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发送' }}</button>
+        <div :class="['status-bar', statusClass]">{{ statusText }}</div>
+
+        <div class="input-area">
+            <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题...">
+            <button class="send-btn" @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发 送' }}</button>
+        </div>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script>
-        const { createApp, ref, nextTick, onMounted } = Vue
+        const { createApp, ref, computed, nextTick, onMounted } = Vue
         createApp({
             setup() {
                 const query = ref('')
@@ -65,47 +402,90 @@
                 const statusClass = ref('')
                 const isLoading = ref(false)
                 const chatRef = ref(null)
-                const sessionId = ref('default')
-                const API_BASE = 'http://192.168.100.128:8347'
+                const currentSessionId = ref('')
+                const sessions = ref([])
+                const API_BASE = 'http://localhost:8000'
+                    // 'http://192.168.100.128:8347'
+
+                const currentTitle = computed(() => {
+                    const sess = sessions.value.find(s => s.session_id === currentSessionId.value)
+                    return sess ? sess.title : '新会话'
+                })
 
                 const scrollToBottom = async () => {
                     await nextTick()
-                    if (chatRef.value) {
-                        chatRef.value.scrollTop = chatRef.value.scrollHeight
-                    }
+                    if (chatRef.value) chatRef.value.scrollTop = chatRef.value.scrollHeight
                 }
 
-                onMounted(async () => {
+                const loadSessions = async () => {
                     try {
-                        const res = await fetch(`${API_BASE}/new_session`, { method: 'POST' })
+                        const res = await fetch(`${API_BASE}/sessions`)
                         const data = await res.json()
-                        sessionId.value = data.session_id
+                        if (data.status === 'ok') sessions.value = data.sessions
+                    } catch (e) { console.error('加载会话列表失败:', e) }
+                }
+
+                const switchSession = async (sessId) => {
+                    if (sessId === currentSessionId.value) return
+                    currentSessionId.value = sessId
+                    statusText.value = ''
+                    statusClass.value = ''
+                    try {
+                        const res = await fetch(`${API_BASE}/sessions/${sessId}`)
+                        const data = await res.json()
+                        if (data.status === 'ok' && data.history.length > 0) {
+                            messages.value = data.history.map(h => ({ role: h.role, content: h.content }))
+                        } else {
+                            messages.value = []
+                        }
                     } catch (e) {
-                        sessionId.value = 'default'
+                        console.error('加载会话历史失败:', e)
+                        messages.value = []
                     }
-                })
+                    scrollToBottom()
+                }
 
-                async function newSession() {
+                const deleteSession = async (sessId) => {
+                    if (!confirm('确定删除这个会话吗？')) return
+                    try {
+                        await fetch(`${API_BASE}/sessions/${sessId}`, { method: 'DELETE' })
+                        await loadSessions()
+                        if (sessId === currentSessionId.value) {
+                            if (sessions.value.length > 0) {
+                                await switchSession(sessions.value[0].session_id)
+                            } else {
+                                await newSession()
+                            }
+                        }
+                    } catch (e) { console.error('删除会话失败:', e) }
+                }
+
+                const newSession = async () => {
                     try {
                         const res = await fetch(`${API_BASE}/new_session`, { method: 'POST' })
                         const data = await res.json()
-                        sessionId.value = data.session_id
-                    } catch (e) {}
+                        currentSessionId.value = data.session_id
+                    } catch (e) {
+                        currentSessionId.value = 'default'
+                    }
                     messages.value = []
                     statusText.value = ''
                     statusClass.value = ''
+                    await loadSessions()
                 }
 
-                async function clearHistory() {
+                const clearCurrentHistory = async () => {
+                    if (!confirm('确定清空当前对话吗？')) return
                     try {
-                        await fetch(`${API_BASE}/clear_history?session_id=${sessionId.value}`, { method: 'POST' })
+                        await fetch(`${API_BASE}/clear_history?session_id=${currentSessionId.value}`, { method: 'POST' })
+                        await loadSessions()
                     } catch (e) {}
                     messages.value = []
                     statusText.value = ''
                     statusClass.value = ''
                 }
 
-                async function sendQuery() {
+                const sendQuery = async () => {
                     if (!query.value.trim() || isLoading.value) return
                     isLoading.value = true
                     const userQuery = query.value
@@ -122,9 +502,8 @@
                         const response = await fetch(`${API_BASE}/ask`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: userQuery, session_id: sessionId.value })
+                            body: JSON.stringify({ query: userQuery, session_id: currentSessionId.value })
                         })
-
                         if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
                         const reader = response.body.getReader()
@@ -154,12 +533,11 @@
                                                 : '✅ 已完成检索调用输出解决方案'
                                             statusClass.value = 'done'
                                         }
-                                    } catch (e) {
-                                        console.warn('解析跳过:', line)
-                                    }
+                                    } catch (e) {}
                                 }
                             }
                         }
+                        await loadSessions()
                     } catch (error) {
                         statusText.value = `❌ 错误: ${error.message}`
                         messages.value[assistantIdx].content = `请求失败: ${error.message}`
@@ -168,7 +546,21 @@
                     }
                 }
 
-                return { query, messages, statusText, statusClass, isLoading, sendQuery, chatRef, newSession, clearHistory }
+                onMounted(async () => {
+                    await loadSessions()
+                    if (sessions.value.length > 0) {
+                        await switchSession(sessions.value[0].session_id)
+                    } else {
+                        await newSession()
+                    }
+                })
+
+                return {
+                    query, messages, statusText, statusClass, isLoading,
+                    sendQuery, chatRef, newSession, clearCurrentHistory,
+                    sessions, currentSessionId, currentTitle,
+                    loadSessions, switchSession, deleteSession
+                }
             }
         }).mount('body')
     </script>

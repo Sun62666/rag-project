@@ -141,7 +141,7 @@ async def register(user: UserAuth):
         "created_at": _now(),
     })
     token = secrets.token_hex(32)
-    cache.setex(f"token:{token}", 86400 * 7, user.username)
+    cache.setex(f"token:{token}", 86400, user.username)
     return {"status": "ok", "token": token, "username": user.username}
 
 
@@ -156,7 +156,7 @@ async def login(user: UserAuth):
     if input_hash != stored_hash:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     token = secrets.token_hex(32)
-    cache.setex(f"token:{token}", 86400 * 7, user.username)
+    cache.setex(f"token:{token}", 86400, user.username)
     return {"status": "ok", "token": token, "username": user.username}
 
 

@@ -611,7 +611,7 @@
                         </template>
                         <template v-else>
                             <div class="session-title" @dblclick="startRename(sess)">{{ sess.title }}</div>
-                            <div class="session-time">{{ sess.updated_at || sess.created_at || '' }}</div>
+                            <div class="session-time">{{ sess.created_at || '' }}</div>
                         </template>
                     </div>
                     <button class="session-delete" @click.stop="deleteSession(sess.session_id)" title="删除会话">×</button>

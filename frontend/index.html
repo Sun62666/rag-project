@@ -11,10 +11,11 @@
             --primary-light: #eef1fe;
             --danger: #e74c3c;
             --danger-light: #fdecea;
+            --success: #10b981;
             --bg: #f0f2f5;
-            --sidebar-bg: #1e1f26;
-            --sidebar-text: #c5c7ce;
-            --sidebar-active: #2d2e38;
+            --sidebar-bg: #1a1b23;
+            --sidebar-hover: #262733;
+            --sidebar-active: #2d2e3a;
             --card-bg: #ffffff;
             --text: #1a1a2e;
             --text-secondary: #6b7280;
@@ -29,22 +30,147 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
             background: var(--bg);
             height: 100vh;
-            display: flex;
             overflow: hidden;
         }
 
-        /* ========== 左侧深色侧边栏 ========== */
+        /* ========== 登录页 ========== */
+        .login-page {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #1a1b23 0%, #2d2e3a 50%, #1a1b23 100%);
+        }
+
+        .login-card {
+            width: 400px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .login-header {
+            background: var(--primary);
+            padding: 32px 32px 28px;
+            text-align: center;
+        }
+
+        .login-header h1 {
+            color: #fff;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .login-header p {
+            color: rgba(255,255,255,0.75);
+            font-size: 13px;
+        }
+
+        .login-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .login-tab {
+            flex: 1;
+            padding: 14px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .login-tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .login-form {
+            padding: 28px 32px 32px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 11px 14px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: var(--bg);
+        }
+
+        .form-group input:focus {
+            border-color: var(--primary);
+            background: #fff;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 6px;
+        }
+
+        .login-btn:hover { background: var(--primary-hover); }
+        .login-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+        .login-error {
+            background: var(--danger-light);
+            color: var(--danger);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .login-error.show { display: block; }
+
+        /* ========== 主布局 ========== */
+        .app-layout {
+            height: 100vh;
+            display: flex;
+        }
+
+        /* ========== 侧边栏 ========== */
         .sidebar {
             width: 280px;
             min-width: 280px;
             background: var(--sidebar-bg);
             display: flex;
             flex-direction: column;
-            color: var(--sidebar-text);
+            color: #c5c7ce;
         }
 
         .sidebar-header {
-            padding: 20px 16px;
+            padding: 20px 16px 16px;
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
 
@@ -57,8 +183,6 @@
             align-items: center;
             gap: 8px;
         }
-
-        .sidebar-logo span { font-size: 20px; }
 
         .new-session-btn {
             width: 100%;
@@ -100,7 +224,7 @@
             position: relative;
         }
 
-        .session-item:hover { background: var(--sidebar-active); }
+        .session-item:hover { background: var(--sidebar-hover); }
 
         .session-item.active {
             background: var(--primary);
@@ -132,6 +256,17 @@
             margin-top: 3px;
         }
 
+        .session-rename-input {
+            width: 100%;
+            padding: 2px 6px;
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            background: #fff;
+            color: var(--text);
+            font-size: 13px;
+            outline: none;
+        }
+
         .session-delete {
             padding: 2px 6px;
             font-size: 14px;
@@ -155,7 +290,65 @@
             font-size: 13px;
         }
 
-        /* ========== 右侧主区域 ========== */
+        .sidebar-footer {
+            padding: 14px 16px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .user-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .user-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .user-role {
+            font-size: 11px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        .logout-btn {
+            padding: 6px 10px;
+            background: none;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.5);
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            color: var(--danger);
+            border-color: var(--danger);
+            background: var(--danger-light);
+        }
+
+        /* ========== 主区域 ========== */
         .main-content {
             flex: 1;
             display: flex;
@@ -262,7 +455,7 @@
         }
 
         .typing-cursor::after {
-            content: '▊';
+            content: '\25AE';
             animation: blink 1s infinite;
             color: var(--primary);
         }
@@ -288,6 +481,31 @@
             color: var(--text-secondary);
         }
 
+        .quick-questions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 24px;
+        }
+
+        .quick-q {
+            padding: 8px 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-q:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+
         /* ========== 状态栏 ========== */
         .status-bar {
             font-size: 12px;
@@ -297,7 +515,7 @@
         }
 
         .status-bar.loading { color: var(--primary); }
-        .status-bar.done { color: #10b981; }
+        .status-bar.done { color: var(--success); }
 
         /* ========== 输入区域 ========== */
         .input-area {
@@ -339,63 +557,120 @@
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <div class="sidebar-logo"><span>🤖</span> SmartOps</div>
-            <button class="new-session-btn" @click="newSession">＋ 新建会话</button>
-        </div>
-        <div class="sessions-list">
-            <div
-                v-for="sess in sessions"
-                :key="sess.session_id"
-                :class="['session-item', { active: sess.session_id === currentSessionId }]"
-                @click="switchSession(sess.session_id)"
-            >
-                <span class="session-icon">💬</span>
-                <div class="session-info">
-                    <div class="session-title">{{ sess.title }}</div>
-                    <div class="session-time">{{ sess.updated_at || sess.created_at || '' }}</div>
-                </div>
-                <button class="session-delete" @click.stop="deleteSession(sess.session_id)" title="删除会话">×</button>
+    <div v-if="!isLoggedIn" class="login-page">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>SmartOps</h1>
+                <p>智能运维助手平台</p>
             </div>
-            <div v-if="sessions.length === 0" class="sessions-empty">暂无历史会话</div>
+            <div class="login-tabs">
+                <button :class="['login-tab', { active: loginTab === 'login' }]" @click="loginTab = 'login'">登 录</button>
+                <button :class="['login-tab', { active: loginTab === 'register' }]" @click="loginTab = 'register'">注 册</button>
+            </div>
+            <div class="login-form">
+                <div :class="['login-error', { show: authError }]">{{ authError }}</div>
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input v-model="authUsername" @keyup.enter="handleAuth" placeholder="请输入用户名">
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input v-model="authPassword" type="password" @keyup.enter="handleAuth" placeholder="请输入密码">
+                </div>
+                <button class="login-btn" @click="handleAuth" :disabled="authLoading">
+                    {{ authLoading ? '处理中...' : (loginTab === 'login' ? '登 录' : '注 册') }}
+                </button>
+            </div>
         </div>
     </div>
 
-    <div class="main-content">
-        <div class="top-bar">
-            <div class="top-bar-title">{{ currentTitle }}</div>
-            <div class="top-bar-actions">
-                <button class="btn-outline danger" @click="clearCurrentHistory">清空对话</button>
-                <button class="btn-outline" @click="loadSessions">刷新列表</button>
+    <div v-else class="app-layout">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo"><span>🤖</span> SmartOps</div>
+                <button class="new-session-btn" @click="newSession">＋ 新建会话</button>
+            </div>
+            <div class="sessions-list">
+                <div
+                    v-for="sess in sessions"
+                    :key="sess.session_id"
+                    :class="['session-item', { active: sess.session_id === currentSessionId }]"
+                    @click="switchSession(sess.session_id)"
+                >
+                    <span class="session-icon">💬</span>
+                    <div class="session-info">
+                        <template v-if="renamingSessionId === sess.session_id">
+                            <input
+                                class="session-rename-input"
+                                v-model="renameValue"
+                                @keyup.enter="confirmRename(sess.session_id)"
+                                @blur="confirmRename(sess.session_id)"
+                                @click.stop
+                                ref="renameInputRef"
+                            >
+                        </template>
+                        <template v-else>
+                            <div class="session-title" @dblclick="startRename(sess)">{{ sess.title }}</div>
+                            <div class="session-time">{{ sess.updated_at || sess.created_at || '' }}</div>
+                        </template>
+                    </div>
+                    <button class="session-delete" @click.stop="deleteSession(sess.session_id)" title="删除会话">×</button>
+                </div>
+                <div v-if="sessions.length === 0" class="sessions-empty">暂无历史会话</div>
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-avatar">{{ currentUser.charAt(0).toUpperCase() }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ currentUser }}</div>
+                    <div class="user-role">运维工程师</div>
+                </div>
+                <button class="logout-btn" @click="handleLogout">退出</button>
             </div>
         </div>
 
-        <div class="chat-container" ref="chatRef">
-            <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
-                <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
-                <div class="bubble" :class="{ 'typing-cursor': isLoading && idx === messages.length - 1 && msg.role === 'assistant' }">{{ msg.content }}</div>
+        <div class="main-content">
+            <div class="top-bar">
+                <div class="top-bar-title">{{ currentTitle }}</div>
+                <div class="top-bar-actions">
+                    <button class="btn-outline danger" @click="clearCurrentHistory">清空对话</button>
+                    <button class="btn-outline" @click="loadSessions">刷新列表</button>
+                </div>
             </div>
-            <div v-if="messages.length === 0" class="empty-state">
-                <div class="empty-state-icon">🔍</div>
-                <div class="empty-state-title">智能运维助手</div>
-                <div class="empty-state-desc">输入运维问题，如：为什么Linux服务器CPU使用率持续100%？</div>
+
+            <div class="chat-container" ref="chatRef">
+                <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
+                    <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
+                    <div class="bubble" :class="{ 'typing-cursor': isLoading && idx === messages.length - 1 && msg.role === 'assistant' }">{{ msg.content }}</div>
+                </div>
+                <div v-if="messages.length === 0" class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <div class="empty-state-title">智能运维助手</div>
+                    <div class="empty-state-desc">输入运维问题，或点击下方快捷问题开始</div>
+                    <div class="quick-questions">
+                        <span class="quick-q" @click="quickAsk('Linux服务器CPU使用率持续100%如何排查？')">CPU使用率过高</span>
+                        <span class="quick-q" @click="quickAsk('如何查看系统日志定位问题？')">查看系统日志</span>
+                        <span class="quick-q" @click="quickAsk('磁盘空间不足怎么处理？')">磁盘空间不足</span>
+                        <span class="quick-q" @click="quickAsk('Docker容器无法启动怎么排查？')">Docker容器问题</span>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div :class="['status-bar', statusClass]">{{ statusText }}</div>
+            <div :class="['status-bar', statusClass]">{{ statusText }}</div>
 
-        <div class="input-area">
-            <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题...">
-            <button class="send-btn" @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发 送' }}</button>
+            <div class="input-area">
+                <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题...">
+                <button class="send-btn" @click="sendQuery" :disabled="isLoading">{{ isLoading ? '生成中...' : '发 送' }}</button>
+            </div>
         </div>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script>
-        const { createApp, ref, computed, nextTick, onMounted } = Vue
+        const { createApp, ref, computed, nextTick, onMounted, watch } = Vue
+
         createApp({
             setup() {
+                const API_BASE = "http://localhost:8000"
                 const query = ref('')
                 const messages = ref([])
                 const statusText = ref('')
@@ -404,8 +679,24 @@
                 const chatRef = ref(null)
                 const currentSessionId = ref('')
                 const sessions = ref([])
-                const API_BASE = 'http://localhost:8000'
-                    // 'http://192.168.100.128:8347'
+                const messageCache = ref({})
+                const isLoggedIn = ref(false)
+                const currentUser = ref('')
+                const loginTab = ref('login')
+                const authUsername = ref('')
+                const authPassword = ref('')
+                const authError = ref('')
+                const authLoading = ref(false)
+                const renamingSessionId = ref('')
+                const renameValue = ref('')
+                const renameInputRef = ref(null)
+
+                const getToken = () => localStorage.getItem('smartops_token') || ''
+
+                const authHeaders = () => {
+                    const t = getToken()
+                    return t ? { 'Authorization': `Bearer ${t}` } : {}
+                }
 
                 const currentTitle = computed(() => {
                     const sess = sessions.value.find(s => s.session_id === currentSessionId.value)
@@ -417,9 +708,91 @@
                     if (chatRef.value) chatRef.value.scrollTop = chatRef.value.scrollHeight
                 }
 
+                const saveToCache = () => {
+                    if (currentSessionId.value) {
+                        messageCache.value[currentSessionId.value] = messages.value.map(m => ({ ...m }))
+                    }
+                }
+
+                const loadFromCache = (sessionId) => {
+                    if (messageCache.value[sessionId]) {
+                        messages.value = messageCache.value[sessionId].map(m => ({ ...m }))
+                        return true
+                    }
+                    return false
+                }
+
+                const checkAuth = async () => {
+                    const token = getToken()
+                    if (!token) {
+                        isLoggedIn.value = false
+                        return
+                    }
+                    try {
+                        const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() })
+                        if (res.ok) {
+                            const data = await res.json()
+                            currentUser.value = data.username
+                            isLoggedIn.value = true
+                        } else {
+                            localStorage.removeItem('smartops_token')
+                            isLoggedIn.value = false
+                        }
+                    } catch {
+                        isLoggedIn.value = false
+                    }
+                }
+
+                const handleAuth = async () => {
+                    authError.value = ''
+                    if (!authUsername.value.trim() || !authPassword.value.trim()) {
+                        authError.value = '用户名和密码不能为空'
+                        return
+                    }
+                    authLoading.value = true
+                    try {
+                        const endpoint = loginTab.value === 'login' ? '/auth/login' : '/auth/register'
+                        const res = await fetch(`${API_BASE}${endpoint}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: authUsername.value, password: authPassword.value })
+                        })
+                        const data = await res.json()
+                        if (res.ok) {
+                            localStorage.setItem('smartops_token', data.token)
+                            currentUser.value = data.username
+                            isLoggedIn.value = true
+                            authUsername.value = ''
+                            authPassword.value = ''
+                        } else {
+                            authError.value = data.detail || '操作失败'
+                        }
+                    } catch (e) {
+                        authError.value = '网络连接失败，请检查后端服务'
+                    } finally {
+                        authLoading.value = false
+                    }
+                }
+
+                const handleLogout = async () => {
+                    try {
+                        await fetch(`${API_BASE}/auth/logout`, {
+                            method: 'POST',
+                            headers: authHeaders()
+                        })
+                    } catch {}
+                    localStorage.removeItem('smartops_token')
+                    isLoggedIn.value = false
+                    currentUser.value = ''
+                    sessions.value = []
+                    messages.value = []
+                    messageCache.value = {}
+                    currentSessionId.value = ''
+                }
+
                 const loadSessions = async () => {
                     try {
-                        const res = await fetch(`${API_BASE}/sessions`)
+                        const res = await fetch(`${API_BASE}/sessions`, { headers: authHeaders() })
                         const data = await res.json()
                         if (data.status === 'ok') sessions.value = data.sessions
                     } catch (e) { console.error('加载会话列表失败:', e) }
@@ -427,11 +800,16 @@
 
                 const switchSession = async (sessId) => {
                     if (sessId === currentSessionId.value) return
+                    saveToCache()
                     currentSessionId.value = sessId
                     statusText.value = ''
                     statusClass.value = ''
+                    if (loadFromCache(sessId)) {
+                        scrollToBottom()
+                        return
+                    }
                     try {
-                        const res = await fetch(`${API_BASE}/sessions/${sessId}`)
+                        const res = await fetch(`${API_BASE}/sessions/${sessId}`, { headers: authHeaders() })
                         const data = await res.json()
                         if (data.status === 'ok' && data.history.length > 0) {
                             messages.value = data.history.map(h => ({ role: h.role, content: h.content }))
@@ -448,7 +826,8 @@
                 const deleteSession = async (sessId) => {
                     if (!confirm('确定删除这个会话吗？')) return
                     try {
-                        await fetch(`${API_BASE}/sessions/${sessId}`, { method: 'DELETE' })
+                        await fetch(`${API_BASE}/sessions/${sessId}`, { method: 'DELETE', headers: authHeaders() })
+                        delete messageCache.value[sessId]
                         await loadSessions()
                         if (sessId === currentSessionId.value) {
                             if (sessions.value.length > 0) {
@@ -461,8 +840,12 @@
                 }
 
                 const newSession = async () => {
+                    saveToCache()
                     try {
-                        const res = await fetch(`${API_BASE}/new_session`, { method: 'POST' })
+                        const res = await fetch(`${API_BASE}/new_session`, {
+                            method: 'POST',
+                            headers: authHeaders()
+                        })
                         const data = await res.json()
                         currentSessionId.value = data.session_id
                     } catch (e) {
@@ -477,12 +860,42 @@
                 const clearCurrentHistory = async () => {
                     if (!confirm('确定清空当前对话吗？')) return
                     try {
-                        await fetch(`${API_BASE}/clear_history?session_id=${currentSessionId.value}`, { method: 'POST' })
-                        await loadSessions()
-                    } catch (e) {}
+                        await fetch(`${API_BASE}/clear_history?session_id=${currentSessionId.value}`, { method: 'POST', headers: authHeaders() })
+                    } catch {}
                     messages.value = []
+                    messageCache.value[currentSessionId.value] = []
                     statusText.value = ''
                     statusClass.value = ''
+                }
+
+                const startRename = (sess) => {
+                    renamingSessionId.value = sess.session_id
+                    renameValue.value = sess.title
+                    nextTick(() => {
+                        const input = document.querySelector('.session-rename-input')
+                        if (input) { input.focus(); input.select() }
+                    })
+                }
+
+                const confirmRename = async (sessionId) => {
+                    const newTitle = renameValue.value.trim()
+                    renamingSessionId.value = ''
+                    if (!newTitle) return
+                    try {
+                        await fetch(`${API_BASE}/sessions/${sessionId}/rename`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                            body: JSON.stringify({ title: newTitle })
+                        })
+                        await loadSessions()
+                    } catch (e) {
+                        console.error('重命名失败:', e)
+                    }
+                }
+
+                const quickAsk = (q) => {
+                    query.value = q
+                    sendQuery()
                 }
 
                 const sendQuery = async () => {
@@ -501,7 +914,7 @@
                     try {
                         const response = await fetch(`${API_BASE}/ask`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'application/json', ...authHeaders() },
                             body: JSON.stringify({ query: userQuery, session_id: currentSessionId.value })
                         })
                         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -532,34 +945,48 @@
                                                 ? '✅ 已从缓存中检索到解决方案'
                                                 : '✅ 已完成检索调用输出解决方案'
                                             statusClass.value = 'done'
+                                            saveToCache()
                                         }
-                                    } catch (e) {}
+                                    } catch {}
                                 }
                             }
                         }
+                        saveToCache()
                         await loadSessions()
                     } catch (error) {
                         statusText.value = `❌ 错误: ${error.message}`
                         messages.value[assistantIdx].content = `请求失败: ${error.message}`
+                        saveToCache()
                     } finally {
                         isLoading.value = false
                     }
                 }
 
-                onMounted(async () => {
-                    await loadSessions()
-                    if (sessions.value.length > 0) {
-                        await switchSession(sessions.value[0].session_id)
-                    } else {
-                        await newSession()
+                watch(isLoggedIn, async (val) => {
+                    if (val) {
+                        await loadSessions()
+                        if (sessions.value.length > 0) {
+                            await switchSession(sessions.value[0].session_id)
+                        } else {
+                            await newSession()
+                        }
                     }
+                })
+
+                onMounted(async () => {
+                    await checkAuth()
                 })
 
                 return {
                     query, messages, statusText, statusClass, isLoading,
                     sendQuery, chatRef, newSession, clearCurrentHistory,
                     sessions, currentSessionId, currentTitle,
-                    loadSessions, switchSession, deleteSession
+                    loadSessions, switchSession, deleteSession,
+                    isLoggedIn, currentUser, loginTab,
+                    authUsername, authPassword, authError, authLoading,
+                    handleAuth, handleLogout,
+                    renamingSessionId, renameValue, renameInputRef,
+                    startRename, confirmRename, quickAsk
                 }
             }
         }).mount('body')

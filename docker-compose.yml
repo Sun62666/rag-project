@@ -8,8 +8,15 @@ services:
       - ./model:/app/model
     env_file:
       - ./Env.env
+    environment:
+      - USE_AGENT=true
+      - MILVUS_URL=milvus-standalone:19530
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8347:8347"
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - rag-network
 
@@ -27,6 +34,3 @@ services:
 networks:
   rag-network:
     external: true
-
-
-

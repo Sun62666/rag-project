@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from src.config import Config
 from src.retriever import OpsRetriever
 from src.graph import build_graph
+from src.memory.short_term import ShortTermMemory
+from src.memory.long_term import LongTermMemory
+from src.agent.ops_agent import OpsAgent, build_agent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_MESSAGE = "当前知识库未覆盖该问题，建议转交人工运维专家。"
 
-app = FastAPI(title="SmartOps API")
+app = FastAPI(title="SmartOps Agent API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,10 +37,18 @@ cfg = Config()
 pdf_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "文档2.pdf")
 logger.info("初始化retriever中。。。。")
 retriever = OpsRetriever(pdf_path)
-logger.info("构建图中。。。。")
+logger.info("构建LangGraph图中。。。。")
 graph = build_graph(retriever)
+logger.info("初始化短期记忆中。。。。")
+stm = ShortTermMemory(max_history=20)
+logger.info("初始化长期记忆中。。。。")
+ltm = LongTermMemory()
+logger.info("构建Agent智能体中。。。。")
+agent = build_agent(retriever, stm, ltm)
 logger.info("查看redis缓存中。。。。")
 cache = redis.from_url(cfg.REDIS_URL, decode_responses=True)
+
+USE_AGENT = os.getenv("USE_AGENT", "true").lower() == "true"
 
 
 class Query(BaseModel):
@@ -60,6 +71,9 @@ def _session_key(sid: str) -> str:
 
 def _user_sessions_key(username: str) -> str:
     return f"user_sessions:{username}"
+
+def _session_queries_key(sid: str) -> str:
+    return f"session_queries:{sid}"
 
 def _hash_password(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode()).hexdigest()
@@ -96,9 +110,6 @@ def _get_user_sessions(username: str) -> list:
     except Exception:
         return []
 
-def _session_queries_key(sid: str) -> str:
-    return f"session_queries:{sid}"
-
 def save_chat_history(session_id: str, user_msg: str, assistant_msg: str, username: str = "anonymous"):
     try:
         history_key = f"chat_history:{session_id}"
@@ -132,7 +143,7 @@ async def register(user: UserAuth):
     user_key = f"user:{user.username}"
     if cache.exists(user_key):
         raise HTTPException(status_code=400, detail="用户名已存在")
-    salt = secrets.token_hex(8) # 生成十六进制字符串16个（这是生成8个字节，一个字节8位，十六进制4位组成一个字符串）
+    salt = secrets.token_hex(8)
     password_hash = _hash_password(user.password, salt)
     cache.hset(user_key, mapping={
         "username": user.username,
@@ -141,7 +152,7 @@ async def register(user: UserAuth):
         "created_at": _now(),
     })
     token = secrets.token_hex(32)
-    cache.setex(f"token:{token}", 86400, user.username)
+    cache.setex(f"token:{token}", 86400 * 7, user.username)
     return {"status": "ok", "token": token, "username": user.username}
 
 
@@ -156,7 +167,7 @@ async def login(user: UserAuth):
     if input_hash != stored_hash:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     token = secrets.token_hex(32)
-    cache.setex(f"token:{token}", 86400, user.username)
+    cache.setex(f"token:{token}", 86400 * 7, user.username)
     return {"status": "ok", "token": token, "username": user.username}
 
 
@@ -185,6 +196,8 @@ async def ask(req: Query, bg_tasks: BackgroundTasks, authorization: Optional[str
         if cached:
             logger.info(f"answer from cache: True")
             bg_tasks.add_task(save_chat_history, req.session_id, req.query, cached, username)
+            stm.add_user_message(req.session_id, req.query)
+            stm.add_ai_message(req.session_id, cached)
 
             async def cached_stream():
                 yield f"data: {json.dumps({'type': 'status', 'message': '从缓存中获取'})}\n\n"
@@ -200,9 +213,53 @@ async def ask(req: Query, bg_tasks: BackgroundTasks, authorization: Optional[str
     except Exception as e:
         logger.error(f"Redis缓存异常：{e}")
 
+    if USE_AGENT:
+        return await _ask_agent(req, username, bg_tasks)
+    else:
+        return await _ask_graph(req, username, bg_tasks)
+
+
+async def _ask_agent(req: Query, username: str, bg_tasks: BackgroundTasks):
+    """使用 Agent 智能体模式处理请求"""
+    chat_history = get_chat_history(req.session_id)
+    if chat_history and not stm.get_messages(req.session_id):
+        stm.load_from_records(req.session_id, chat_history)
+
+    async def agent_stream():
+        full_answer = []
+        try:
+            yield f"data: {json.dumps({'type': 'status', 'message': '智能体分析中...'})}\n\n"
+
+            async for event in agent.astream(req.query, req.session_id, username):
+                if event["type"] == "status":
+                    yield f"data: {json.dumps({'type': 'status', 'message': event['message']})}\n\n"
+                elif event["type"] == "token":
+                    full_answer.append(event["content"])
+                    yield f"data: {json.dumps({'type': 'token', 'content': event['content']})}\n\n"
+                elif event["type"] == "done":
+                    answer_text = "".join(full_answer)
+                    if answer_text and answer_text != FALLBACK_MESSAGE:
+                        bg_tasks.add_task(cache.setex, f"ops:{req.query}", cfg.CACHE_TTL_SHOT, answer_text)
+                    bg_tasks.add_task(save_chat_history, req.session_id, req.query, answer_text, username)
+                    yield f"data: {json.dumps({'type': 'done', 'from_cache': False})}\n\n"
+
+        except Exception as e:
+            logger.error(f"agent_stream 异常: {e}")
+            answer_text = "".join(full_answer) or f"智能体执行失败: {str(e)}"
+            bg_tasks.add_task(save_chat_history, req.session_id, req.query, answer_text, username)
+            yield f"data: {json.dumps({'type': 'status', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        agent_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
+
+async def _ask_graph(req: Query, username: str, bg_tasks: BackgroundTasks):
+    """使用原有 LangGraph 模式处理请求（兼容回退）"""
     chat_history = get_chat_history(req.session_id)
     history_strs = [f"{'用户' if h['role']=='user' else '助手'}: {h['content']}" for h in chat_history]
-    logger.info(f"历史消息： {history_strs}")
 
     async def stream_gen():
         try:
@@ -237,7 +294,7 @@ async def ask(req: Query, bg_tasks: BackgroundTasks, authorization: Optional[str
             answer_text = "".join(full_answer)
 
             if not answer_text.strip():
-                logger.debug("\n 流式未捕获答案，尝试直接获取...")
+                logger.debug("流式未捕获答案，尝试直接获取...")
                 final_state = await graph.ainvoke(state)
                 answer_text = final_state.get("answer", "").strip()
                 if answer_text:
@@ -253,7 +310,7 @@ async def ask(req: Query, bg_tasks: BackgroundTasks, authorization: Optional[str
 
             yield f"data: {json.dumps({'type': 'done', 'from_cache': False})}\n\n"
         except Exception as e:
-            logger.error(f"\n stream_gen 异常: {e}")
+            logger.error(f"stream_gen 异常: {e}")
             yield f"data: {json.dumps({'type': 'status', 'message': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -261,6 +318,11 @@ async def ask(req: Query, bg_tasks: BackgroundTasks, authorization: Optional[str
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
     )
+
+
+@app.get("/mode")
+async def get_mode():
+    return {"mode": "agent" if USE_AGENT else "graph"}
 
 
 @app.post("/new_session")
@@ -299,6 +361,7 @@ async def clear_history(session_id: str = "default"):
         cache.hset(_session_key(session_id), mapping={
             "updated_at": _now(),
         })
+        stm.clear(session_id)
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -332,6 +395,7 @@ async def delete_session(session_id: str):
         pipe.execute()
         if user_id:
             cache.zrem(_user_sessions_key(user_id), session_id)
+        stm.clear(session_id)
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

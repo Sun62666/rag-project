@@ -8,6 +8,7 @@ ENV TZ=Asia/Shanghai
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV APP_ENV=production
+ENV USE_AGENT=true
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -20,11 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua
 
 COPY src/ ./src/
 COPY prompts/ ./prompts/
+COPY start_agent.py .
 
 EXPOSE 8347
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8347/docs || exit 1
 
-CMD ["uvicorn","src.app:app","--host","0.0.0.0","--port","8347"]
-
+CMD ["python", "start_agent.py"]

@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-dotenv
 python-multipart
 
@@ -33,3 +34,7 @@ psutil
 
 # 评估工具
 ragas
+
+# 测试
+pytest
+pytest-asyncio

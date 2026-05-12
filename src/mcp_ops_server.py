@@ -2,16 +2,18 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from mcp.server.fastmcp import FastMCP
-from src.common_tools import (
+from src.tools import (
     server_system_check_logic,
     port_check_logic,
     read_service_log_logic,
-    knowledge_retriever_logic
+    knowledge_retriever_logic,
+    set_retriever,
 )
 from src.retriever import OpsRetriever
 
 PDF_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "文档2.pdf")
 retriever = OpsRetriever(PDF_PATH)
+set_retriever(retriever)
 mcp = FastMCP("smartops-assistant")
 
 

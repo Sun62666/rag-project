@@ -31,6 +31,20 @@ SAMPLE_LOG = """2026-05-07 10:12:01 [ERROR] ConnectionTimeout: Redis connection 
 """
 
 
+def read_service_log_logic(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
+    try:
+        result = subprocess.check_output(f"tail -n {lines} {log_path}", shell=True, text=True)
+        return f"【日志内容】\n{result}"
+    except Exception as e:
+        return f"读取日志失败：{str(e)}"
+
+
+@tool
+def read_service_log(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
+    """读取服务器日志文件。参数：log_path-日志路径，lines-读取行数"""
+    return read_service_log_logic(log_path, lines)
+
+
 @tool
 def log_error_stats(log_path: str = "", lines: int = 100) -> str:
     """统计日志文件中的错误信息，包括错误类型分布、高频错误TOP5、时间趋势等。

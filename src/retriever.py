@@ -12,7 +12,7 @@ from langchain_classic.retrievers import EnsembleRetriever
 from sentence_transformers import CrossEncoder
 from pymilvus import connections,Collection,utility
 from typing import List
-from src.config import Config
+from src.core.config import Config
 logger = logging.getLogger(__name__)
 class OpsRetriever:
     _instance = None

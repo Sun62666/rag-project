@@ -6,6 +6,28 @@ from langchain_core.tools import tool
 logger = logging.getLogger(__name__)
 
 
+def server_system_check_logic() -> str:
+    try:
+        cpu_usage = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('C:\\')
+        return (
+            f"【服务器系统巡检报告】\n"
+            f"CPU使用率：{cpu_usage}%\n"
+            f"内存使用率：{mem.percent}% (总内存：{round(mem.total/1024/1024/1024,2)}G)\n"
+            f"磁盘使用率：{disk.percent}% (总磁盘：{round(disk.total/1024/1024/1024,2)}G)\n"
+            f"运行进程数：{len(psutil.pids())}"
+        )
+    except Exception as e:
+        return f"系统巡检失败：{str(e)}"
+
+
+@tool
+def server_system_check() -> str:
+    """检查服务器CPU、内存、磁盘使用率和运行进程数。"""
+    return server_system_check_logic()
+
+
 @tool
 def server_info_query(server_name: str = "localhost") -> str:
     """查询服务器系统信息，包括CPU使用率、内存使用率、磁盘使用率、运行进程数、系统负载等。

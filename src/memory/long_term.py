@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.vectorstores import Milvus
 from pymilvus import connections, utility, Collection
-from src.config import Config
+from src.core.config import Config
 
 logger = logging.getLogger(__name__)
 

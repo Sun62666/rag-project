@@ -512,10 +512,59 @@
             color: var(--text-secondary);
             padding: 4px 24px;
             min-height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .status-bar.loading { color: var(--primary); }
         .status-bar.done { color: var(--success); }
+
+        .mode-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mode-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .mode-tag.agent {
+            background: #eef1fe;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+        }
+
+        .mode-tag.graph {
+            background: #fef3c7;
+            color: #d97706;
+            border: 1px solid #d97706;
+        }
+
+        .mode-switch-btn {
+            padding: 2px 8px;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-switch-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-light);
+        }
 
         /* ========== 输入区域 ========== */
         .input-area {
@@ -655,7 +704,17 @@
                 </div>
             </div>
 
-            <div :class="['status-bar', statusClass]">{{ statusText }}</div>
+            <div :class="['status-bar', statusClass]">
+                <span>{{ statusText }}</span>
+                <div class="mode-indicator">
+                    <span :class="['mode-tag', currentMode]">
+                        {{ currentMode === 'agent' ? '🤖 Agent' : '📊 Graph' }}
+                    </span>
+                    <button class="mode-switch-btn" @click="toggleMode" :disabled="isLoading">
+                        切换为{{ currentMode === 'agent' ? 'Graph' : 'Agent' }}
+                    </button>
+                </div>
+            </div>
 
             <div class="input-area">
                 <input v-model="query" @keyup.enter="sendQuery" :disabled="isLoading" placeholder="输入运维问题...">
@@ -670,7 +729,7 @@
 
         createApp({
             setup() {
-                const API_BASE = "http://localhost:8000"
+                const API_BASE = "http://localhost:8347"
                 const query = ref('')
                 const messages = ref([])
                 const statusText = ref('')
@@ -690,6 +749,7 @@
                 const renamingSessionId = ref('')
                 const renameValue = ref('')
                 const renameInputRef = ref(null)
+                const currentMode = ref('agent')
 
                 const getToken = () => localStorage.getItem('smartops_token') || ''
 
@@ -893,6 +953,33 @@
                     }
                 }
 
+                const loadMode = async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/mode`, { headers: authHeaders() })
+                        if (res.ok) {
+                            const data = await res.json()
+                            currentMode.value = data.mode
+                        }
+                    } catch (e) { console.error('获取模式失败:', e) }
+                }
+
+                const toggleMode = async () => {
+                    const newMode = currentMode.value === 'agent' ? false : true
+                    try {
+                        const res = await fetch(`${API_BASE}/mode`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                            body: JSON.stringify({ use_agent: newMode })
+                        })
+                        if (res.ok) {
+                            const data = await res.json()
+                            currentMode.value = data.mode
+                            statusText.value = `已切换为 ${data.mode === 'agent' ? 'Agent' : 'Graph'} 模式`
+                            statusClass.value = 'done'
+                        }
+                    } catch (e) { console.error('切换模式失败:', e) }
+                }
+
                 const quickAsk = (q) => {
                     query.value = q
                     sendQuery()
@@ -975,6 +1062,7 @@
 
                 onMounted(async () => {
                     await checkAuth()
+                    await loadMode()
                 })
 
                 return {
@@ -986,7 +1074,8 @@
                     authUsername, authPassword, authError, authLoading,
                     handleAuth, handleLogout,
                     renamingSessionId, renameValue, renameInputRef,
-                    startRename, confirmRename, quickAsk
+                    startRename, confirmRename, quickAsk,
+                    currentMode, toggleMode
                 }
             }
         }).mount('body')

@@ -12,7 +12,7 @@ from langchain_classic.retrievers import EnsembleRetriever
 from sentence_transformers import CrossEncoder
 from pymilvus import connections,Collection,utility
 from typing import List
-from src.core.config import Config
+from src.core.config import get_settings
 logger = logging.getLogger(__name__)
 class OpsRetriever:
     _instance = None
@@ -27,7 +27,7 @@ class OpsRetriever:
         if self.initialized:
             return
 
-        self.cfg = Config()
+        self.cfg = get_settings()
         logger.info("初始化配置成功。。。。")
 
         if pdf_path:

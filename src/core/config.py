@@ -1,9 +1,9 @@
 import os
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field,SecretStr
 from dotenv import load_dotenv
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _env_files = [
     os.path.join(_BASE_DIR, ".env"),
@@ -22,7 +22,7 @@ class Config(BaseSettings):
     BASE_URL: str = Field(default="", description="LLM API基础URL")
     MILVUS_URI: str = Field(default="milvus_uri", alias="MILVUS_URL", description="Milvus连接URI")
     REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis连接URL")
-    LLM_MODEL: str = Field(default="qwen3.5-plus", description="LLM模型名称")
+    LLM_MODEL: str = Field(default="qwen3.5-plus-2026-04-20", description="LLM模型名称")
     EMBED_MODEL: str = Field(default="text-embedding-v2", description="Embedding模型名称")
     COLLECTION_NAME: str = Field(default="ops_knowledge_v2", description="Milvus知识库集合名")
     RERANK_MODEL: str = Field(

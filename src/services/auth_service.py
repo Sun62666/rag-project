@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from src.core.redis import get_cache
 from src.core.security import hash_password, create_token, verify_password
-from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

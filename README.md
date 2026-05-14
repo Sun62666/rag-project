@@ -1,12 +1,12 @@
 # 🤖 SmartOps Agent - 运维智能体
 
-> 从 RAG 到 Agent：基于 LangChain + Milvus + FastAPI 的生产级运维智能体
+> 从 RAG 到 Agent：基于 LangGraph + Milvus + FastAPI 的生产级运维智能体
 
 ## 📖 项目简介
 
 SmartOps Agent 是一个从 RAG 检索增强生成升级为完整智能体的运维问答系统。支持知识库检索、长期记忆、工具自主调用，实现「先检索文档 → 再查历史记忆 → 再调用工具 → 最后生成回答」的完整 Agent 工作流。
 
-## 🏗 架构图（文字版）
+## 🏗 架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -16,45 +16,61 @@ SmartOps Agent 是一个从 RAG 检索增强生成升级为完整智能体的运
                            │ HTTP/SSE
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  FastAPI (app.py)                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ 认证模块  │  │ 会话管理  │  │ 缓存层   │  │ 模式切换  │   │
-│  │ JWT+Redis│  │ Redis Hash│  │ Redis    │  │Agent/Graph│  │
-│  └──────────┘  └──────────┘  └──────────┘  └─────┬────┘   │
-└──────────────────────────────────────────────────┼─────────┘
-                                                   │
-                    ┌──────────────────────────────┼─────────┐
-                    │         OpsAgent (智能体)      │         │
-                    │   AgentExecutor + ToolCalling  │         │
-                    │                                │         │
-                    │  ┌─────────┐  ┌────────────┐  │         │
-                    │  │短期记忆  │  │  长期记忆    │  │         │
-                    │  │InMemory │  │Milvus向量库  │  │         │
-                    │  │Session  │  │ops_memory   │  │         │
-                    │  └─────────┘  └────────────┘  │         │
-                    │                                │         │
-                    │  ┌──────────────────────────┐  │         │
-                    │  │       工具集 (Tools)       │  │         │
-                    │  │ ① knowledge_retriever     │  │         │
-                    │  │ ② memory_retriever        │  │         │
-                    │  │ ③ server_info_query       │  │         │
-                    │  │ ④ log_error_stats         │  │         │
-                    │  └──────────────────────────┘  │         │
-                    └────────────────────────────────┘         │
-                                                               │
-     ┌─────────────────────────────────────────────────────────┘
-     │
-     ▼   (兼容回退: LangGraph 工作流)
-┌─────────────────────────────────────────────────────────────┐
-│  classify → rewrite_query → retrieve → execute_tools → gen  │
-└─────────────────────────────────────────────────────────────┘
+│                FastAPI (src/app.py 极简入口)                   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                    api/ 路由层                         │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │   │
+│  │  │ auth.py  │  │session.py│  │ chat.py  │           │   │
+│  │  │/auth/*   │  │/sessions │  │  /ask    │           │   │
+│  │  └──────────┘  └──────────┘  └──────────┘           │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                  services/ 业务逻辑层                  │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │   │
+│  │  │auth_svc  │  │session_svc│ │ chat_svc │           │   │
+│  │  └──────────┘  └──────────┘  └──────────┘           │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                   core/ 基础设施层                     │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │   │
+│  │  │ config   │  │  redis   │  │ security │           │   │
+│  │  │Pydantic  │  │ 连接管理  │  │JWT+密码  │           │   │
+│  │  └──────────┘  └──────────┘  └──────────┘           │   │
+│  └──────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
                            │
-          ┌────────────────┼────────────────┐
-          ▼                ▼                ▼
-   ┌────────────┐   ┌────────────┐   ┌────────────┐
-   │   Milvus   │   │   Redis    │   │ DashScope  │
-   │ 知识库+记忆 │   │ 缓存+会话  │   │  通义千问   │
-   └────────────┘   └────────────┘   └────────────┘
+        ┌──────────────────┼──────────────────┐
+        ▼                                     ▼
+┌──────────────────┐              ┌──────────────────────┐
+│  Agent 模式       │              │  Graph 模式(兼容回退)  │
+│  (langgraph       │              │  (LangGraph           │
+│   create_react_   │              │   StateGraph          │
+│   agent)          │              │   工作流)              │
+│                   │              │                       │
+│ ┌───────────────┐│              │ classify→rewrite→     │
+│ │  tools/ 工具集  ││              │ retrieve→tools→gen    │
+│ │ ①knowledge    ││              └──────────────────────┘
+│ │ ②memory       ││
+│ │ ③server_info  ││
+│ │ ④log_analyzer ││
+│ │ ⑤port_check   ││
+│ └───────────────┘│
+│                   │
+│ ┌───────────────┐│
+│ │  memory/ 记忆  ││
+│ │ 短期: InMemory ││
+│ │ 长期: Milvus   ││
+│ └───────────────┘│
+└──────────────────┘
+        │
+        ▼
+ ┌────────────┐  ┌────────────┐  ┌────────────┐
+ │   Milvus   │  │   Redis    │  │ DashScope  │
+ │ 知识库+记忆 │  │ 缓存+会话  │  │  通义千问   │
+ └────────────┘  └────────────┘  └────────────┘
 ```
 
 ## 🔄 核心流程
@@ -68,7 +84,7 @@ SmartOps Agent 是一个从 RAG 检索增强生成升级为完整智能体的运
            ↓              ↓
    短期记忆加载历史    意图分类→改写→检索
            ↓              ↓
-   AgentExecutor调度   工具调用→生成回答
+   create_react_agent   工具调用→生成回答
    ┌─────────────┐
    │ LLM自主决策  │
    │ ①检索知识库  │
@@ -90,8 +106,8 @@ SmartOps Agent 是一个从 RAG 检索增强生成升级为完整智能体的运
 |------|------|------|
 | **前端** | Vue 3 + SSE | 单页应用，流式对话，登录注册 |
 | **后端** | FastAPI + Uvicorn | 异步API，SSE流式输出 |
-| **智能体** | LangChain AgentExecutor | Tool Calling + 自主决策 |
-| **工作流** | LangGraph | 意图分类→检索→工具→生成 |
+| **智能体** | LangGraph create_react_agent | ReAct 模式 + Tool Calling |
+| **工作流** | LangGraph StateGraph | 意图分类→检索→工具→生成 |
 | **短期记忆** | InMemory (LangChain Messages) | 会话隔离，上下文连贯 |
 | **长期记忆** | Milvus (ops_memory_store) | 向量化历史问答，跨会话检索 |
 | **知识库** | Milvus (ops_knowledge_v2) | BM25+向量混合检索+重排序 |
@@ -99,51 +115,87 @@ SmartOps Agent 是一个从 RAG 检索增强生成升级为完整智能体的运
 | **LLM** | DashScope (qwen3.5-plus) | 工具调用+流式生成 |
 | **Embedding** | DashScope (text-embedding-v2) | 向量化 |
 | **Reranker** | BGE-reranker-v2-m3 | 交叉编码器重排序 |
+| **配置** | Pydantic Settings | 环境变量+验证+类型安全 |
 | **部署** | Docker Compose | Milvus+Redis+FastAPI+Nginx 一键启动 |
 
 ## ✨ 改造亮点
 
-1. **双模式架构**：Agent模式（智能体自主决策）+ Graph模式（LangGraph工作流），环境变量一键切换
-2. **双层记忆系统**：短期记忆（内存，会话隔离）+ 长期记忆（Milvus向量库，跨会话检索）
-3. **工具自主调用**：LLM自主判断是否调用工具，无需硬编码规则
-4. **完整认证体系**：JWT Token + Redis存储，注册/登录/退出
-5. **会话级缓存清理**：删除会话时级联清理关联的问答缓存
-6. **流式Agent输出**：AgentExecutor + astream_events 实现token级流式
+1. **模块化分层架构**：api/ 路由层 + services/ 业务层 + core/ 基础设施层，职责清晰，易于维护
+2. **双模式架构**：Agent模式（LangGraph ReAct智能体）+ Graph模式（LangGraph工作流），环境变量一键切换
+3. **双层记忆系统**：短期记忆（内存，会话隔离）+ 长期记忆（Milvus向量库，跨会话检索）
+4. **工具自主调用**：LLM自主判断是否调用工具，无需硬编码规则
+5. **完整认证体系**：JWT Token + Redis存储，注册/登录/退出
+6. **Pydantic配置管理**：类型安全、环境变量注入、字段验证，告别散落的配置
+7. **依赖注入**：deps.py 集中管理组件初始化和获取，便于测试和替换
+8. **流式Agent输出**：astream_events 实现token级流式
 
 ## 📂 项目结构
 
 ```
 SmartOps Assistant/
 ├── src/
-│   ├── app.py                 # FastAPI 主入口（双模式调度）
-│   ├── config.py              # 配置管理
-│   ├── graph.py               # LangGraph 工作流（兼容回退）
-│   ├── retriever.py           # 混合检索器（BM25+向量+重排序）
-│   ├── common_tools.py        # 原有工具逻辑
-│   ├── memory/                # 🆕 记忆模块
-│   │   ├── __init__.py
-│   │   ├── short_term.py      # 短期记忆（InMemory，会话隔离）
-│   │   └── long_term.py       # 长期记忆（Milvus向量库）
-│   ├── tools/                 # 🆕 工具模块
-│   │   ├── __init__.py
-│   │   ├── server_info.py     # 服务器信息查询工具
-│   │   └── log_analyzer.py    # 日志错误统计工具
-│   └── agent/                 # 🆕 智能体模块
-│       ├── __init__.py
-│       └── ops_agent.py       # AgentExecutor + Tool Calling
+│   ├── app.py                     # FastAPI 极简入口（30行）
+│   ├── retriever.py               # 混合检索器（BM25+向量+重排序）
+│   ├── mcp_ops_server.py          # MCP 运维服务
+│   ├── finetune.py                # 微调工具
+│   │
+│   ├── core/                      # 基础设施层
+│   │   ├── config.py              # Pydantic Settings 配置管理
+│   │   ├── redis.py               # Redis 连接管理
+│   │   ├── security.py            # JWT认证 + 密码哈希
+│   │   └── logging.py             # 日志配置
+│   │
+│   ├── api/                       # 路由层
+│   │   ├── deps.py                # 依赖注入 + 组件初始化
+│   │   ├── auth.py                # /auth/* 认证路由
+│   │   ├── session.py             # /sessions/* 会话路由
+│   │   └── chat.py                # /ask 对话路由
+│   │
+│   ├── services/                  # 业务逻辑层
+│   │   ├── auth_service.py        # 注册/登录/登出
+│   │   ├── session_service.py     # 会话CRUD + 历史管理
+│   │   └── chat_service.py        # 对话流式处理
+│   │
+│   ├── agent/                     # 智能体模块
+│   │   └── ops_agent.py           # LangGraph ReAct Agent
+│   │
+│   ├── graph/                     # LangGraph 工作流（兼容回退）
+│   │   ├── prompts.py             # 所有 Prompt 模板
+│   │   ├── nodes.py               # 各节点工厂函数
+│   │   └── workflow.py            # 图构建 + 条件路由
+│   │
+│   ├── tools/                     # 统一工具模块
+│   │   ├── knowledge.py           # 知识库检索工具
+│   │   ├── server_info.py         # 服务器信息查询工具
+│   │   ├── port_check.py          # 端口检查工具
+│   │   ├── log_analyzer.py        # 日志错误统计工具
+│   │   └── memory_retriever.py    # 历史记忆检索工具
+│   │
+│   └── memory/                    # 记忆模块
+│       ├── short_term.py          # 短期记忆（InMemory，会话隔离）
+│       └── long_term.py           # 长期记忆（Milvus向量库）
+│
+├── tests/                         # 单元测试
+│   ├── test_config.py             # 配置管理测试
+│   ├── test_security.py           # 安全模块测试
+│   ├── test_services.py           # 业务服务测试
+│   └── test_tools.py              # 工具功能测试
+│
 ├── frontend/
-│   └── index.html             # Vue 3 前端（登录+会话+流式对话）
+│   └── index.html                 # Vue 3 前端（登录+会话+流式对话）
 ├── prompts/
-│   └── ops_system.md          # 系统提示词
-├── data/                      # 知识库文档
-├── model/                     # 本地重排序模型
-├── eval/                      # 评估工具
+│   └── ops_system.md              # 系统提示词
+├── data/                          # 知识库文档
+├── model/                         # 本地重排序模型
+├── eval/                          # 评估工具
 ├── middleware/
-│   └── docker-compose.yml     # Milvus + Redis 编排
-├── start_agent.py             # 🆕 一键启动脚本
-├── docker-compose.yml         # 主服务编排
-├── Dockerfile                 # 后端容器构建
-├── requirements.txt           # Python 依赖
+│   └── docker-compose.yml         # Milvus + Redis 编排
+│
+├── start_agent.py                 # 一键启动脚本
+├── docker-compose.yml             # 主服务编排
+├── Dockerfile                     # 后端容器构建
+├── requirements.txt               # Python 依赖
+├── pytest.ini                     # pytest 配置
 └── README.md
 ```
 
@@ -179,6 +231,12 @@ python start_agent.py
 USE_AGENT=false python start_agent.py
 ```
 
+### 运行测试
+
+```bash
+python -m pytest tests/ -v
+```
+
 ## 📡 API 接口
 
 | 方法 | 路径 | 说明 |
@@ -206,9 +264,9 @@ USE_AGENT=false python start_agent.py
 
 **A:** 短期记忆基于 LangChain 的 InMemory ChatMessageHistory，存储当前会话的对话上下文，支持追问和指代消解，会话隔离，进程重启后丢失。长期记忆复用 Milvus 向量库，新增 `ops_memory_store` 集合，将每轮问答向量化保存，提问时先检索 top3 相关历史记忆融合到上下文，解决长会话遗忘和跨会话知识复用问题。记忆带时间戳、用户ID、会话ID元数据。
 
-### Q3: AgentExecutor 的工作原理？Tool Calling 是怎么实现的？
+### Q3: LangGraph create_react_agent 的工作原理？Tool Calling 是怎么实现的？
 
-**A:** AgentExecutor 是 LangChain 的智能体执行器，核心循环是：LLM 思考 → 决定调用工具 → 执行工具 → 结果返回 LLM → 继续思考或输出最终答案。Tool Calling 通过 `create_tool_calling_agent` 实现，LLM 根据 tool 的 name 和 description 判断是否需要调用，生成结构化的工具调用请求（含参数），AgentExecutor 解析后执行对应工具函数，将结果注入 agent_scratchpad 供 LLM 继续推理。
+**A:** `create_react_agent` 是 LangGraph 提供的预构建 ReAct 智能体工厂函数，核心循环是：LLM 思考 → 决定调用工具 → 执行工具 → 结果返回 LLM → 继续思考或输出最终答案。Tool Calling 通过 LLM 的 function calling 能力实现，LLM 根据 tool 的 name 和 description 判断是否需要调用，生成结构化的工具调用请求（含参数），框架解析后执行对应工具函数，将结果注入消息流供 LLM 继续推理。相比旧版 AgentExecutor，create_react_agent 基于LangGraph 的 StateGraph 构建，天然支持流式输出、检查点和图可视化。
 
 ### Q4: 为什么用 Milvus 做长期记忆而不是 Redis？
 
@@ -220,7 +278,7 @@ USE_AGENT=false python start_agent.py
 
 ### Q6: 如何保证 Agent 不会无限调用工具？
 
-**A:** AgentExecutor 有 `max_iterations` 参数（本项目设为5），超过最大迭代次数自动停止并返回当前结果。同时 `handle_parsing_errors=True` 确保工具调用解析失败时不会崩溃。此外，系统提示词明确规定了工具使用场景，减少不必要的调用。
+**A:** LangGraph 的 create_react_agent 内置递归限制机制，默认最大步数限制防止无限循环。同时系统提示词明确规定了工具使用场景和边界规则，减少不必要的调用。此外工具函数本身也有异常处理，确保工具调用失败时不会导致 Agent 崩溃。
 
 ### Q7: 缓存策略是怎么设计的？删除会话时如何清理关联缓存？
 
@@ -230,9 +288,9 @@ USE_AGENT=false python start_agent.py
 
 **A:** Agent 模式是主推方案，LLM 自主决策更灵活；Graph 模式是 LangGraph 工作流，流程固定但更可控。保留双模式的意义：1）兼容回退——Agent 出问题时切回 Graph；2）A/B 对比——面试时可以展示两种方案的差异；3）渐进式改造——不破坏原有代码，通过 `USE_AGENT` 环境变量一键切换。
 
-### Q9: Docker 部署的架构和注意事项？
+### Q9: 为什么要做模块化分层？各层职责是什么？
 
-**A:** 分两层 docker-compose：middleware 层（Milvus + etcd + MinIO + Redis + 管理工具）和应用层（FastAPI + Nginx）。注意事项：1）Milvus 依赖 etcd 和 MinIO，需要 healthcheck 确保启动顺序；2）数据卷挂载保证持久化；3）网络用外部 bridge 网络打通两层；4）环境变量区分容器内和本地地址（MILVUS_URL 在容器内用服务名）。
+**A:** 原始架构的 app.py 有 424 行，路由、业务逻辑、缓存管理全混在一起，难以维护和测试。重构后分为三层：**api/ 路由层**只负责 HTTP 请求/响应的解析和格式化；**services/ 业务层**封装核心业务逻辑（注册、登录、会话管理），可被多个路由复用；**core/ 基础设施层**提供配置、缓存、安全等底层能力。好处：1）单一职责，每层只做一件事；2）依赖注入，通过 deps.py 管理组件，便于单元测试时 mock；3）可扩展，新增功能只需加文件，不用改老代码。
 
 ### Q10: 如何评估这个系统的效果？有哪些指标？
 

@@ -40,7 +40,20 @@ async def ask(
         return await ask_graph(req, username, bg_tasks, get_graph(), stm)
 
 
+class ModeSwitch(BaseModel):
+    use_agent: bool
+
+
 @router.get("/mode")
 async def get_mode():
     cfg = get_settings()
-    return {"mode": "agent" if cfg.USE_AGENT else "graph"}
+    return {"mode": "agent" if cfg.USE_AGENT else "graph", "use_agent": cfg.USE_AGENT}
+
+
+@router.post("/mode")
+async def switch_mode(body: ModeSwitch):
+    cfg = get_settings()
+    cfg.USE_AGENT = body.use_agent
+    mode_name = "agent" if body.use_agent else "graph"
+    logger.info(f"[Mode] 切换为 {mode_name} 模式")
+    return {"mode": mode_name, "use_agent": body.use_agent}

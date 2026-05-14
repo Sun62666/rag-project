@@ -3,7 +3,7 @@ import os
 
 
 def load_system_prompt() -> str:
-    prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts", "ops_system.md")
+    prompt_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),"prompts", "ops_system.md")
     with open(prompt_path, "r", encoding="utf-8") as f:
         return f.read()
 

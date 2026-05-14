@@ -1,10 +1,8 @@
 import os
 import logging
-from functools import lru_cache
 from typing import Optional
-from fastapi import Depends, Header
-from src.core.config import Config, get_settings
-from src.core.redis import get_cache
+from fastapi import Header
+from src.core.config import get_settings
 from src.core.security import get_current_user
 from src.retriever import OpsRetriever
 from src.graph import build_graph
@@ -25,7 +23,8 @@ def init_components():
     global _retriever, _graph, _stm, _ltm, _agent
 
     cfg = get_settings()
-    pdf_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "文档2.pdf")
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pdf_path = os.path.join(project_root, "data", "文档2.pdf")
 
     logger.info("初始化retriever中。。。。")
     _retriever = OpsRetriever(pdf_path)
@@ -41,6 +40,24 @@ def init_components():
 
     logger.info("构建Agent智能体中。。。。")
     _agent = build_agent(_retriever, _stm, _ltm)
+
+
+def cleanup_components():
+    global _retriever, _graph, _stm, _ltm, _agent
+    import src.core.redis as redis_mod
+    if redis_mod._cache_instance is not None:
+        try:
+            redis_mod._cache_instance.close()
+            logger.info("[Redis] 连接已关闭")
+        except Exception as e:
+            logger.warning(f"[Redis] 关闭异常: {e}")
+        redis_mod._cache_instance = None
+    _retriever = None
+    _graph = None
+    _stm = None
+    _ltm = None
+    _agent = None
+    logger.info("[Cleanup] 所有组件已释放")
 
 
 def get_retriever() -> OpsRetriever:

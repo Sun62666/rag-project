@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import List, Dict, Optional
+from typing import List, Dict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,8 @@ class ShortTermMemory:
         self._store[session_id].append(msg)
         if len(self._store[session_id]) > self._max_history:
             self._store[session_id] = self._store[session_id][-self._max_history:]
-        logger.debug(f"[短期记忆] session={session_id} 添加 {role} 消息，当前共 {len(self._store[session_id])} 条")
+        logger.info(f"[短期记忆] session={session_id} 添加 {role} 消息，消息为 {self._store[session_id]},当前共 {len(self._store[session_id])} 条")
+
 
     def add_user_message(self, session_id: str, content: str):
         self.add_message(session_id, "user", content)

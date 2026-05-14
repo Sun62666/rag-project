@@ -70,7 +70,7 @@ class TestSessionService:
         assert "session_id" in result
 
     @patch("src.services.session_service.get_cache")
-    def test_rename_session_empty_title(se沙箱的 PATH、环境变量可能和你本地不同lf, mock_cache):
+    def test_rename_session_empty_title(self, mock_cache):
         result = rename_session("sid", "")
         assert result["status"] == "error"
 

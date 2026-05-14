@@ -3,7 +3,6 @@ import re
 import os
 import subprocess
 from collections import Counter
-from typing import List
 from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)

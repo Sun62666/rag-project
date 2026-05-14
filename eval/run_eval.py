@@ -6,12 +6,12 @@ from ragas import evaluate
 from ragas.metrics import faithfulness, answer_relevancy, context_precision
 from langchain_openai import ChatOpenAI
 from langchain_community.embeddings import DashScopeEmbeddings
-from src.config import Config
+from src.core.config import get_settings
 from src.retriever import OpsRetriever
 from dotenv import load_dotenv
 
 load_dotenv("../Key.env")
-cfg = Config()
+cfg = get_settings()
 llm = ChatOpenAI(model=cfg.LLM_MODEL, base_url=cfg.BASE_URL, api_key=cfg.DASHSCOPE_API_KEY, temperature=0.1)
 emb = DashScopeEmbeddings(model=cfg.EMBED_MODEL, dashscope_api_key=cfg.DASHSCOPE_API_KEY)
 

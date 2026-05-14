@@ -2,7 +2,6 @@ import logging
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from pydantic import BaseModel
-from src.api.deps import get_current_user_dep
 from src.services.auth_service import register_user, login_user, logout_user, get_user_info
 
 logger = logging.getLogger(__name__)

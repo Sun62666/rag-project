@@ -1,7 +1,7 @@
 from typing import Dict
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
-from src.core.config import Config
+from src.core.config import get_settings
 from src.retriever import OpsRetriever
 from src.tools import server_system_check, port_check, read_service_log, set_retriever
 from src.graph.nodes import (
@@ -52,7 +52,7 @@ def route_after_retrieve(state: Dict) -> str:
 def build_graph(retriever: OpsRetriever):
     set_retriever(retriever)
 
-    cfg = Config()
+    cfg = get_settings()
 
     llm = ChatOpenAI(
         model=cfg.LLM_MODEL,

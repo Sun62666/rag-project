@@ -1,9 +1,7 @@
 import logging
-from typing import List, Optional
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.prebuilt import create_react_agent
-from src.core.config import Config
+from src.core.config import get_settings
 from src.retriever import OpsRetriever
 from src.memory.short_term import ShortTermMemory
 from src.memory.long_term import LongTermMemory
@@ -51,7 +49,7 @@ class OpsAgent:
         set_retriever(retriever)
         set_long_term_memory(ltm)
 
-        self.cfg = Config()
+        self.cfg = get_settings()
         self.stm = stm
         self.ltm = ltm
 

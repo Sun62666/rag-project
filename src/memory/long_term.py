@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 from typing import List, Dict, Optional
@@ -6,7 +5,7 @@ from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.vectorstores import Milvus
 from pymilvus import connections, utility, Collection
-from src.core.config import Config
+from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ class LongTermMemory:
     COLLECTION_NAME = "ops_memory_store"
 
     def __init__(self):
-        self.cfg = Config()
+        self.cfg = get_settings()
         self._emb = DashScopeEmbeddings(
             model=self.cfg.EMBED_MODEL,
             dashscope_api_key=self.cfg.DASHSCOPE_API_KEY

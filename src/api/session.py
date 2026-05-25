@@ -1,6 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, Header
-from typing import Optional
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from src.api.deps import get_current_user_dep, get_stm
 from src.services.session_service import (

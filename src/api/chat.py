@@ -1,7 +1,5 @@
-import json
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, Header
-from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from src.core.config import get_settings
 from src.api.deps import get_current_user_dep, get_agent, get_graph, get_stm

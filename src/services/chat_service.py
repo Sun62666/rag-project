@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import AsyncGenerator
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessageChunk
 from src.core.config import get_settings
@@ -116,7 +115,7 @@ async def ask_graph(req, username: str, bg_tasks, graph, stm) -> StreamingRespon
                     for char in answer_text:
                         yield f"data: {json.dumps({'type': 'token', 'content': char})}\n\n"
 
-            logger.info(f"answer_text: {answer_text}")
+            # logger.info(f"answer_text: {answer_text}")
 
             cfg = get_settings()
             if answer_text and answer_text != FALLBACK_MESSAGE:

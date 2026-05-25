@@ -57,7 +57,7 @@ class OpsRetriever:
         # print(f"原来未合并文档： {self.splits[:2]}")
         self.splits = self.merge_chunks(self.splits)
         # print(f"已经合并文档： {self.splits[:2]}")
-        logger.info(f"长度为： {len(self.splits)}  划分数据成果： {self.splits[:2]} ")
+        logger.info(f"长度为： {len(self.splits)} ") #  划分数据成果： {self.splits[:2]}
 
     def _init_retrievers(self):
         max_retries = 10

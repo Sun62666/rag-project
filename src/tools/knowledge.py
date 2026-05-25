@@ -27,7 +27,15 @@ def knowledge_retriever_logic(query: str, retriever: OpsRetriever, top_k: int = 
 
 @tool
 def knowledge_retriever(query: str) -> str:
-    """从运维知识库检索故障解决方案、配置规范等文档。当用户询问运维故障排查、配置方法、操作规范时调用。
+    """从运维知识库检索故障解决方案、配置规范等文档。
+
+    【调用时机】
+    - 用户提出全新的运维问题（之前未讨论过）
+    - memory_retriever 检索后未找到相关历史记忆
+    - 需要查找标准运维文档、配置规范
+
+    【重要】如果用户问题与之前讨论过的话题相关，应先调用 memory_retriever 而非此工具
+
     参数：query-检索关键词"""
     if retriever_instance is None:
         return "知识库未初始化"

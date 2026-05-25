@@ -1,7 +1,6 @@
 import json
 import logging
 from datetime import datetime
-from typing import List, Optional
 from src.core.redis import get_cache
 from src.core.config import get_settings
 

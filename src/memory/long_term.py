@@ -1,8 +1,10 @@
 import logging
 import time
+import uuid
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
+# from langchain_milvus import Milvus
 from langchain_community.vectorstores import Milvus
 from pymilvus import connections, utility, Collection
 from src.core.config import get_settings
@@ -14,29 +16,40 @@ class LongTermMemory:
     """长期记忆管理器：复用 Milvus 向量库，保存和检索对话历史记忆，解决长会话遗忘问题"""
 
     COLLECTION_NAME = "ops_memory_store"
+    _MILVUS_PLACEHOLDER = "milvus_uri"
 
     def __init__(self):
         self.cfg = get_settings()
+        self._vs: Optional[Milvus] = None
+
+        # 检测 Milvus 是否已配置
+        if not self.cfg.MILVUS_URI or self.cfg.MILVUS_URI == self._MILVUS_PLACEHOLDER:
+            logger.warning(f"[长期记忆] MILVUS_URI 未配置（当前值: {self.cfg.MILVUS_URI!r}），长期记忆不可用")
+            return
+
         self._emb = DashScopeEmbeddings(
             model=self.cfg.EMBED_MODEL,
             dashscope_api_key=self.cfg.DASHSCOPE_API_KEY
         )
-        self._vs: Optional[Milvus] = None
         self._init_collection()
 
     def _init_collection(self):
-        max_retries = 5
+        max_retries = 3
+        last_err = None
         for i in range(max_retries):
             try:
                 connections.connect(alias="default", uri=self.cfg.MILVUS_URI)
+                # 验证连接是否真正可用
+                utility.has_collection(self.COLLECTION_NAME)
                 logger.info(f"[长期记忆] Milvus 连接成功")
                 break
             except Exception as e:
+                last_err = e
                 if i < max_retries - 1:
                     logger.warning(f"[长期记忆] Milvus 连接失败，3秒后重试: {e}")
                     time.sleep(3)
                 else:
-                    logger.error(f"[长期记忆] Milvus 连接失败，长期记忆不可用")
+                    logger.error(f"[长期记忆] Milvus 连接失败，长期记忆不可用: {last_err}")
                     return
 
         try:
@@ -46,7 +59,7 @@ class LongTermMemory:
                     self._vs = Milvus(
                         embedding_function=self._emb,
                         collection_name=self.COLLECTION_NAME,
-                        connection_args={"uri": self.cfg.MILVUS_URI}
+                        connection_args={"uri": self.cfg.MILVUS_URI},
                     )
                     logger.info(f"[长期记忆] 加载已有记忆集合，共 {col.num_entities} 条")
                     return
@@ -71,11 +84,13 @@ class LongTermMemory:
                     [doc],
                     self._emb,
                     collection_name=self.COLLECTION_NAME,
-                    connection_args={"uri": self.cfg.MILVUS_URI}
+                    connection_args={"uri": self.cfg.MILVUS_URI},
+                    auto_id=True,
                 )
                 logger.info(f"[长期记忆] 创建记忆集合并写入首条记忆")
             else:
-                self._vs.add_documents([doc])
+                memory_id = str(uuid.uuid4())
+                self._vs.add_documents([doc], ids=[memory_id])
                 logger.info(f"[长期记忆] 写入记忆: session={session_id}")
         except Exception as e:
             logger.error(f"[长期记忆] 保存记忆失败: {e}")
@@ -109,4 +124,5 @@ class LongTermMemory:
             ts = meta.get("timestamp", "未知时间")
             uid = meta.get("user_id", "未知用户")
             parts.append(f"[记忆{i}] (时间:{ts}, 用户:{uid})\n{m['content']}")
+        logger.info(f"获取当前长期记忆： {'\n\n'.join(parts)}")
         return "\n\n".join(parts)

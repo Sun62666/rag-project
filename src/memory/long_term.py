@@ -56,10 +56,12 @@ class LongTermMemory:
             if utility.has_collection(self.COLLECTION_NAME):
                 col = Collection(self.COLLECTION_NAME)
                 if col.num_entities > 0:
+                    col.load()
                     self._vs = Milvus(
                         embedding_function=self._emb,
                         collection_name=self.COLLECTION_NAME,
-                        connection_args={"uri": self.cfg.MILVUS_URI},
+                        connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
+                        auto_id=True
                     )
                     logger.info(f"[长期记忆] 加载已有记忆集合，共 {col.num_entities} 条")
                     return
@@ -84,13 +86,14 @@ class LongTermMemory:
                     [doc],
                     self._emb,
                     collection_name=self.COLLECTION_NAME,
-                    connection_args={"uri": self.cfg.MILVUS_URI},
-                    auto_id=True,
+                    connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
                 )
+                col = Collection(self.COLLECTION_NAME)
+                col.flush()
+                col.load()
                 logger.info(f"[长期记忆] 创建记忆集合并写入首条记忆")
             else:
-                memory_id = str(uuid.uuid4())
-                self._vs.add_documents([doc], ids=[memory_id])
+                self._vs.add_documents([doc])
                 logger.info(f"[长期记忆] 写入记忆: session={session_id}")
         except Exception as e:
             logger.error(f"[长期记忆] 保存记忆失败: {e}")

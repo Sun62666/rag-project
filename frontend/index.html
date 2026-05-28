@@ -1641,10 +1641,10 @@
                                                 }
                                                 scrollToBottom()
                                             }
+                                            const MIN_INTERVAL = 30
                                             const now = Date.now()
                                             const elapsed = now - lastTime
-                                            if (elapsed < 20) await sleep(5 + Math.random() * 10)
-                                            else if (elapsed < 50) await sleep(2 + Math.random() * 5)
+                                            if (elapsed < MIN_INTERVAL) await sleep(MIN_INTERVAL - elapsed)
                                             lastTime = Date.now()
                                         }
                                         else if (data.type === 'done') {

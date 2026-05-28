@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from langchain_community.document_loaders import PyPDFLoader
+# from langchain_milvus import Milvus
 from langchain_community.vectorstores import Milvus
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -53,11 +54,14 @@ class OpsRetriever:
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=60,separators=["\n案例 ","\n案例","案例","\n\n","\n","。"," ",""])
 
-        self.splits = splitter.split_documents(docs)
-        # print(f"原来未合并文档： {self.splits[:2]}")
-        self.splits = self.merge_chunks(self.splits)
-        # print(f"已经合并文档： {self.splits[:2]}")
-        logger.info(f"长度为： {len(self.splits)} ") #  划分数据成果： {self.splits[:2]}
+        raw_splits = splitter.split_documents(docs)
+        logger.info(f"合并前长度为： {len(raw_splits)}")
+        merged = self.merge_chunks(raw_splits)
+        if merged:
+            self.splits = merged
+        else:
+            self.splits = raw_splits
+        logger.info(f"长度为： {len(self.splits)} ")
 
     def _init_retrievers(self):
         max_retries = 10
@@ -78,6 +82,7 @@ class OpsRetriever:
                     logger.error("⚠ Milvus 连接失败，将仅使用 BM25 检索！")
         self.vs = None
         self.vec_retr = None
+        self.bm25 = None
         collection_exists = False
 
         try:
@@ -93,28 +98,38 @@ class OpsRetriever:
         except Exception as e:
             logger.error(f"⚠ 检查集合失败：{e}")
 
-        self.bm25 = BM25Retriever.from_documents(self.splits)
-        self.bm25.k = 10
+        if self.splits:
+            self.bm25 = BM25Retriever.from_documents(self.splits)
+            self.bm25.k = 10
+        else:
+            logger.warning("⚠ 文档切片为空，BM25 检索不可用")
 
         try:
-
-            emb = DashScopeEmbeddings(model = self.cfg.EMBED_MODEL,dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
+            emb = DashScopeEmbeddings(model=self.cfg.EMBED_MODEL, dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
 
             if collection_exists:
                 self.vs = Milvus(
                     embedding_function=emb,
                     collection_name=self.cfg.COLLECTION_NAME,
-                    connection_args={"uri":self.cfg.MILVUS_URI}
+                    connection_args={"uri":self.cfg.MILVUS_URI,"alias": "default"},
+                    auto_id=True
                 )
-
             else:
+                if not self.splits:
+                    logger.warning("⚠ 文档切片为空，无法创建 Milvus 集合")
+                    self.ensemble = None
+                    return
                 logger.info("🆕 创建新的 Milvus 集合并导入数据...")
                 self.vs = Milvus.from_documents(self.splits,
                                                 emb,
                                                 collection_name=self.cfg.COLLECTION_NAME,
-                                                connection_args={"uri": self.cfg.MILVUS_URI}
+                                                connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
                                                 )
 
+                col = Collection(self.cfg.COLLECTION_NAME)
+                col.flush()
+                col.load()
+                logger.info(f"集合创建完成，数据量： {col.num_entities}")
             self.vec_retr = self.vs.as_retriever(search_kwargs={"k":10})
             self.ensemble = EnsembleRetriever(retrievers=[self.bm25,self.vec_retr],weights=[0.4,0.6])
             logger.info("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
@@ -156,7 +171,7 @@ class OpsRetriever:
         merge = []
         current = None
         for chunk in chunks:
-            if re.match(r'^案例\s+\d+[: ：]',chunk.page_content.strip()):
+            if re.match(r'^案例\s*\d+[: ：]',chunk.page_content.strip()):
                 if current:
                     merge.append(current)
                 current = chunk
@@ -198,14 +213,20 @@ class OpsRetriever:
 
 
     def get_bm25_docs(self, query: str, top_k: int = 3) -> List[Document]:
+        if self.bm25 is None:
+            return []
         docs = self.bm25.invoke(query)
         return self._deduplicate(docs)[:top_k]
 
     def get_vector_docs(self, query: str, top_k: int = 3) -> List[Document]:
+        if self.vec_retr is None:
+            return []
         docs = self.vec_retr.invoke(query)
         return self._deduplicate(docs)[:top_k]
 
     def get_ensemble_rerank_docs(self, query: str, top_k: int = 3) -> List[Document]:
+        if self.ensemble is None:
+            return self.get_bm25_docs(query, top_k)
 
         docs = self.ensemble.invoke(query)
         docs = self._deduplicate(docs)

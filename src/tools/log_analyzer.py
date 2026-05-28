@@ -30,17 +30,25 @@ SAMPLE_LOG = """2026-05-07 10:12:01 [ERROR] ConnectionTimeout: Redis connection 
 """
 
 
-def read_service_log_logic(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_DEFAULT_LOG = os.path.join(_PROJECT_ROOT, "logs", "smartops.log")
+_DEFAULT_ERROR_LOG=os.path.join(_PROJECT_ROOT,"logs","error.log")
+
+def read_service_log_logic(log_path: str = "", lines: int = 20) -> str:
+    if not log_path:
+        log_path = _DEFAULT_LOG
     try:
-        result = subprocess.check_output(f"tail -n {lines} {log_path}", shell=True, text=True)
-        return f"【日志内容】\n{result}"
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            all_lines = f.readlines()
+        content = "".join(all_lines[-lines:])
+        return f"【日志内容】\n{content}"
     except Exception as e:
         return f"读取日志失败：{str(e)}"
 
 
 @tool
-def read_service_log(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
-    """读取服务器日志文件。参数：log_path-日志路径，lines-读取行数"""
+def read_service_log(log_path: str = "", lines: int = 20) -> str:
+    """读取服务器日志文件。参数：log_path-日志路径（默认为项目logs/smartops.log），lines-读取行数"""
     return read_service_log_logic(log_path, lines)
 
 

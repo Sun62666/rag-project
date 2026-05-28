@@ -83,11 +83,17 @@ def save_chat_history(session_id: str, user_msg: str, assistant_msg: str, userna
         cache.expire(history_key, cfg.CACHE_TTL_LONG)
         cache.sadd(_session_queries_key(session_id), user_msg)
         cache.expire(_session_queries_key(session_id), cfg.CACHE_TTL_LONG)
+        title = ""
         if history_len == 0:
             title = user_msg[:20] if len(user_msg) > 20 else user_msg
             cache.hset(_session_key(session_id), mapping={
                 "session_id": session_id,
                 "title": title,
+                "updated_at": _now(),
+            })
+        else:
+            cache.hset(_session_key(session_id), mapping={
+                "session_id": session_id,
                 "updated_at": _now(),
             })
         cache.zadd(_user_sessions_key(username), {session_id: datetime.now().timestamp()})

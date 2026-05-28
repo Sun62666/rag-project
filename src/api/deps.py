@@ -22,7 +22,6 @@ _agent = None
 def init_components():
     global _retriever, _graph, _stm, _ltm, _agent
 
-    cfg = get_settings()
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pdf_path = os.path.join(project_root, "data", "文档2.pdf")
 
@@ -60,7 +59,7 @@ def cleanup_components():
     logger.info("[Cleanup] 所有组件已释放")
 
 
-def get_retriever() -> OpsRetriever:
+def get_retriever() -> Optional[OpsRetriever]:
     return _retriever
 
 
@@ -68,15 +67,15 @@ def get_graph():
     return _graph
 
 
-def get_stm() -> ShortTermMemory:
+def get_stm() -> Optional[ShortTermMemory]:
     return _stm
 
 
-def get_ltm() -> LongTermMemory:
+def get_ltm() -> Optional[LongTermMemory]:
     return _ltm
 
 
-def get_agent() -> OpsAgent:
+def get_agent() -> Optional[OpsAgent]:
     return _agent
 
 

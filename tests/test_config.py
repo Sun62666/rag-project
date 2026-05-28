@@ -6,7 +6,7 @@ from src.core.config import Config
 class TestConfig:
     def test_default_values(self):
         cfg = Config(DASHSCOPE_API_KEY="test", BASE_URL="http://test")
-        assert cfg.LLM_MODEL == "qwen3.5-plus-2026-04-20"
+        assert cfg.LLM_MODEL == "qwen-max"
         assert cfg.PORT == 8347
         assert cfg.USE_AGENT is True
 

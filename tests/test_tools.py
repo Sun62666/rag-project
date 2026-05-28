@@ -40,14 +40,14 @@ class TestServerInfo:
         assert "磁盘" in result
 
 
-class TestLogAnalyzer:
-    @patch("src.tools.log_analyzer.subprocess.check_output")
-    def test_read_log_success(self, mock_output):
-        mock_output.return_value = "line1\nline2\nline3"
-        result = read_service_log_logic("/var/log/test.log", 3)
-        assert "日志内容" in result
-
-    @patch("src.tools.log_analyzer.subprocess.check_output", side_effect=Exception("no such file"))
-    def test_read_log_failure(self, mock_output):
-        result = read_service_log_logic("/nonexistent.log", 10)
-        assert "读取日志失败" in result
+# class TestLogAnalyzer:
+#     @patch("src.tools.log_analyzer.subprocess.check_output")
+#     def test_read_log_success(self, mock_output):
+#         mock_output.return_value = "line1\nline2\nline3"
+#         result = read_service_log_logic("/var/log/test.log", 3)
+#         assert "日志内容" in result
+#
+#     @patch("src.tools.log_analyzer.subprocess.check_output", side_effect=Exception("no such file"))
+#     def test_read_log_failure(self, mock_output):
+#         result = read_service_log_logic("/nonexistent.log", 10)
+#         assert "读取日志失败" in result

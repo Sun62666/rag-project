@@ -5,10 +5,12 @@ from src.core.config import get_settings
 from src.retriever import OpsRetriever
 from src.memory.short_term import ShortTermMemory
 from src.memory.long_term import LongTermMemory
+from langchain_core.messages import HumanMessage
 from src.tools import (
     knowledge_retriever,
     server_info_query,
-    log_error_stats,
+    read_service_log,
+    port_check,
     memory_retriever,
     set_retriever,
     set_long_term_memory,
@@ -23,7 +25,7 @@ AGENT_SYSTEM_PROMPT =   """你是资深运维工程师（SmartOps Agent），擅
 1. **历史记忆检索** - 当问题与之前讨论相关时，优先调用 memory_retriever（更高效）
 2. **知识库检索** - 全新问题或记忆无结果时，调用 knowledge_retriever
 3. **实时系统查询** - 使用 server_info_query 获取服务器状态
-4. **日志分析** - 使用 log_error_stats 分析日志错误
+4. **日志分析** - 使用 read_service_log 分析日志
 
 ## 回答规范
 严格按以下结构回复：
@@ -65,7 +67,8 @@ class OpsAgent:
             knowledge_retriever,
             memory_retriever,
             server_info_query,
-            log_error_stats,
+            read_service_log,
+            port_check
         ]
 
         self.agent = create_agent(
@@ -82,7 +85,7 @@ class OpsAgent:
 
         full_answer = []
 
-        input_messages = chat_history + [{"role": "user", "content": query}]
+        input_messages = chat_history + [HumanMessage(content=query)]
 
         async for event in self.agent.astream_events(
             {"messages": input_messages},
@@ -122,7 +125,7 @@ class OpsAgent:
         chat_history = self.stm.get_messages(session_id)
         self.stm.add_user_message(session_id, query)
 
-        input_messages = chat_history + [{"role": "user", "content": query}]
+        input_messages = chat_history + [HumanMessage(content=query)]
 
         result = await self.agent.ainvoke({"messages": input_messages})
 

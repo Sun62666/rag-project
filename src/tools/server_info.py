@@ -30,8 +30,15 @@ def server_system_check() -> str:
 
 @tool
 def server_info_query(server_name: str = "localhost") -> str:
-    """查询服务器系统信息，包括CPU使用率、内存使用率、磁盘使用率、运行进程数、系统负载等。
-    当用户询问服务器状态、系统资源、CPU/内存/磁盘使用情况时调用此工具。
+    """查询服务器系统实时状态信息，包括CPU使用率、内存使用率、磁盘使用率、运行进程数、系统负载等。
+
+    【调用时机】
+    - 用户明确询问当前服务器实时状态（如："服务器现在内存使用率多少"、"当前CPU负载"）
+    - 需要获取系统当前资源使用情况作为问题诊断的辅助信息
+
+    【注意】此工具仅用于状态查询，不用于解决具体运维故障问题。
+           对于故障问题（如"Redis内存占用过大怎么办"），应先调用 knowledge_retriever。
+
     参数：server_name-服务器名称（默认localhost）"""
     try:
         cpu_percent = psutil.cpu_percent(interval=1)

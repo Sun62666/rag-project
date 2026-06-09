@@ -6,42 +6,22 @@ from src.retriever import OpsRetriever
 from src.memory.short_term import ShortTermMemory
 from src.memory.long_term import LongTermMemory
 from langchain_core.messages import HumanMessage
+from src.prompts import load_agent_prompt
 from src.tools import (
     knowledge_retriever,
     server_info_query,
     read_service_log,
     port_check,
     memory_retriever,
+    knowledge_graph_query,
+    knowledge_graph_extract,
+    document_qa,
     set_retriever,
     set_long_term_memory,
 )
 
 logger = logging.getLogger(__name__)
 
-AGENT_SYSTEM_PROMPT =   """你是资深运维工程师（SmartOps Agent），擅长 Linux/数据库/中间件/云原生运维。
-
-## 核心工作流
-处理用户问题时，按以下优先级获取信息：
-1. **历史记忆检索** - 当问题与之前讨论相关时，优先调用 memory_retriever（更高效）
-2. **知识库检索** - 全新问题或记忆无结果时，调用 knowledge_retriever
-3. **实时系统查询** - 使用 server_info_query 获取服务器状态
-4. **日志分析** - 使用 read_service_log 分析日志
-
-## 回答规范
-严格按以下结构回复：
-【故障现象】
-【可能原因】
-【排查命令】
-【修复步骤】
-【验证方法】
-
-高危操作必须标注 ⚠ 警告。
-
-## 边界规则约束
-- 拒绝闲聊、娱乐、非运维类问题
-- 知识库和记忆库均无结果时，回复：当前知识库未覆盖该问题，建议转交人工运维专家。
-- 禁止在回复中包含任何内部推理过程、思维链或标签
-"""
 
 
 class OpsAgent:
@@ -68,13 +48,16 @@ class OpsAgent:
             memory_retriever,
             server_info_query,
             read_service_log,
-            port_check
+            port_check,
+            knowledge_graph_query,
+            knowledge_graph_extract,
+            document_qa,
         ]
 
         self.agent = create_agent(
             model=self.llm,
             tools=self.tools,
-            system_prompt=AGENT_SYSTEM_PROMPT,
+            system_prompt=load_agent_prompt(),
         )
 
         logger.info(f"[OpsAgent] 初始化完成，工具: {[t.name for t in self.tools]}")

@@ -49,4 +49,5 @@ def setup_logging():
     logging.getLogger("pymilvus").setLevel(logging.WARNING)
     # logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("redis").setLevel(logging.WARNING)
+    logging.getLogger("neo4j").setLevel(logging.WARNING)
 

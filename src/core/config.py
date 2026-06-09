@@ -20,11 +20,12 @@ for _ef in _env_files:
 class Config(BaseSettings):
     DASHSCOPE_API_KEY: str = Field(default="", description="DashScope API密钥")
     BASE_URL: str = Field(default="", description="LLM API基础URL")
-    MILVUS_URI: str = Field(default="milvus_uri", alias="MILVUS_URL", description="Milvus连接URI")
+    MILVUS_URI: str = Field(default="http://192.168.100.128:19530", alias="MILVUS_URL", description="Milvus连接URI")
     REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis连接URL")
     LLM_MODEL: str = Field(default="qwen-max", description="LLM模型名称")
-    EMBED_MODEL: str = Field(default="text-embedding-v2", description="Embedding模型名称")
+    EMBED_MODEL: str = Field(default="text-embedding-v4", description="Embedding模型名称")
     COLLECTION_NAME: str = Field(default="ops_knowledge_v2", description="Milvus知识库集合名")
+    DOC_COLLECTION_NAME: str = Field(default="property_regulations", description="通用文档知识库集合名(物业法规等)")
     RERANK_MODEL: str = Field(
         default=os.path.join(_BASE_DIR, "model", "bge-reranker-v2-m3"),
         description="Rerank模型路径"
@@ -34,7 +35,15 @@ class Config(BaseSettings):
     USE_AGENT: bool = Field(default=True, description="是否使用Agent模式")
     HOST: str = Field(default="0.0.0.0", description="服务监听地址")
     PORT: int = Field(default=8347, description="服务监听端口")
-
+    LOG_PATH: str = Field(default="", description="服务日志路径")
+    ERROR_LOG_PATH: str = Field(default="", description="服务错误日志路径")
+    NEO4J_URI: str = Field(default="bolt://192.168.100.128:7687", description="Neo4j连接URI")
+    NEO4J_USER: str = Field(default="neo4j", description="Neo4j用户名")
+    NEO4J_PASSWORD: str = Field(default="smartops123", description="Neo4j密码")
+    LORA_BASE_MODEL: str = Field(default="", description="LoRA基座模型路径")
+    LORA_WEIGHTS: str = Field(default="", description="LoRA微调权重路径")
+    USE_LORA: bool = Field(default=False, description="是否使用LoRA微调模型(作为本地降级)")
+    LORA_RERANK_MODEL: str = Field(default="", description="微调后的Reranker模型路径")
     model_config = {
         "populate_by_name": True,
         "extra": "ignore",

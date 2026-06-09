@@ -30,11 +30,12 @@ def knowledge_retriever(query: str) -> str:
     """从运维知识库检索故障解决方案、配置规范等文档。
 
     【调用时机】
-    - 用户提出全新的运维问题（之前未讨论过）
+    - 用户提出具体运维故障问题（如："Redis内存占用过大怎么办"、"MySQL连接数满了"）
+    - 需要查找标准运维文档、配置规范、最佳实践
+    - 涉及具体技术组件的问题（Redis、MySQL、Nginx、K8s、Docker等）
     - memory_retriever 检索后未找到相关历史记忆
-    - 需要查找标准运维文档、配置规范
 
-    【重要】如果用户问题与之前讨论过的话题相关，应先调用 memory_retriever 而非此工具
+    【重要】如果问题涉及具体技术组件的故障排查，应优先调用此工具
 
     参数：query-检索关键词"""
     if retriever_instance is None:

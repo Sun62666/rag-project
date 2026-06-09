@@ -3,17 +3,17 @@ import logging
 import re
 import time
 from langchain_community.document_loaders import PyPDFLoader
-# from langchain_milvus import Milvus
-from langchain_community.vectorstores import Milvus
+from langchain_milvus import Milvus as MilvusVS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 from sentence_transformers import CrossEncoder
-from pymilvus import connections,Collection,utility
-from typing import List
+from typing import List, Optional
 from src.core.config import get_settings
+from src.core.milvus_compat import ensure_milvus_connection, get_collection_count
+
 logger = logging.getLogger(__name__)
 class OpsRetriever:
     _instance = None
@@ -44,8 +44,21 @@ class OpsRetriever:
         self._init_retrievers()
         logger.info("检索其初始化成功。。。。")
 
-        self.reranker = CrossEncoder(self.cfg.RERANK_MODEL)
-        logger.info("重排序模型创建成功。。。。")
+        rerank_model_path = self.cfg.LORA_RERANK_MODEL if self.cfg.LORA_RERANK_MODEL else self.cfg.RERANK_MODEL
+        self.reranker = CrossEncoder(rerank_model_path)
+        logger.info(f"重排序模型创建成功: {rerank_model_path}")
+
+        self.kg = None
+        try:
+            from src.graph.knowledge_graph import get_knowledge_graph
+            self.kg = get_knowledge_graph()
+            if self.kg.is_available:
+                logger.info("✅ 知识图谱已连接，检索时将融合图谱上下文")
+            else:
+                logger.info("📝 知识图谱未连接，仅使用 RAG 检索")
+        except Exception as e:
+            logger.warning(f"知识图谱初始化失败，仅使用 RAG 检索: {e}")
+            self.kg = None
 
         self.initialized = True
 
@@ -64,74 +77,70 @@ class OpsRetriever:
         logger.info(f"长度为： {len(self.splits)} ")
 
     def _init_retrievers(self):
-        max_retries = 10
-        for i in range(max_retries):
-            try:
-                logger.info(f"尝试连接 Milvus ({i+1}/{max_retries})...")
-                connections.connect(
-                    alias="default",
-                    uri=self.cfg.MILVUS_URI  # 和你的配置完全一致
-                )
-                logger.info("✅ Milvus 连接成功！")
-                break
-            except Exception as e:
-                if i < max_retries - 1:
-                    logger.error(f"⚠ Milvus 连接失败，3秒后重试: {e}")
-                    time.sleep(3)
-                else:
-                    logger.error("⚠ Milvus 连接失败，将仅使用 BM25 检索！")
+        collection_exists = False
+        collection_count = 0
+
+        # 使用兼容性补丁连接 Milvus（pymilvus 2.6.x ConnectionManager 与 ORM 不兼容）
+        try:
+            client = ensure_milvus_connection(self.cfg.MILVUS_URI)
+            logger.info("✅ Milvus 连接成功！")
+            if client.has_collection(self.cfg.COLLECTION_NAME):
+                collection_count = get_collection_count(client, self.cfg.COLLECTION_NAME)
+                if collection_count > 0:
+                    collection_exists = True
+                    logger.info(f"√ 检测到现有向量库（{collection_count} 条数据），跳过重建")
+        except Exception as e:
+            logger.error(f"❌ Milvus 连接失败，将仅使用 BM25 检索: {e}")
+            if self.splits:
+                self.bm25 = BM25Retriever.from_documents(self.splits)
+                self.bm25.k = 10
+            else:
+                self.bm25 = None
+            self.vs = None
+            self.vec_retr = None
+            self.ensemble = None
+            return
+
         self.vs = None
         self.vec_retr = None
         self.bm25 = None
-        collection_exists = False
 
-        try:
-            if utility.has_collection(self.cfg.COLLECTION_NAME):
-
-                logger.info("---检测到现有向量库--")
-                collection = Collection(self.cfg.COLLECTION_NAME)
-
-                if collection.num_entities > 0:
-                    collection_exists = True
-                    logger.info(f"√ 检测到现有向量库（{collection.num_entities} 条数据），跳过重建")
-
-        except Exception as e:
-            logger.error(f"⚠ 检查集合失败：{e}")
-
+        # 初始化 BM25
         if self.splits:
             self.bm25 = BM25Retriever.from_documents(self.splits)
             self.bm25.k = 10
         else:
             logger.warning("⚠ 文档切片为空，BM25 检索不可用")
 
+        # 初始化 Milvus 向量检索
         try:
             emb = DashScopeEmbeddings(model=self.cfg.EMBED_MODEL, dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
 
             if collection_exists:
-                self.vs = Milvus(
+                self.vs = MilvusVS(
                     embedding_function=emb,
                     collection_name=self.cfg.COLLECTION_NAME,
-                    connection_args={"uri":self.cfg.MILVUS_URI,"alias": "default"},
-                    auto_id=True
+                    connection_args={"uri": self.cfg.MILVUS_URI},
+                    auto_id=True,
+                    enable_dynamic_field=True
                 )
             else:
                 if not self.splits:
-                    logger.warning("⚠ 文档切片为空，无法创建 Milvus 集合")
+                    logger.warning("文档切片为空，无法创建 Milvus 集合")
                     self.ensemble = None
                     return
-                logger.info("🆕 创建新的 Milvus 集合并导入数据...")
-                self.vs = Milvus.from_documents(self.splits,
-                                                emb,
-                                                collection_name=self.cfg.COLLECTION_NAME,
-                                                connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
-                                                )
+                logger.info("创建新的 Milvus 集合并导入数据...")
+                self.vs = MilvusVS.from_documents(
+                    self.splits,
+                    emb,
+                    collection_name=self.cfg.COLLECTION_NAME,
+                    connection_args={"uri": self.cfg.MILVUS_URI},
+                    enable_dynamic_field=True
+                )
+                logger.info("集合创建完成")
 
-                col = Collection(self.cfg.COLLECTION_NAME)
-                col.flush()
-                col.load()
-                logger.info(f"集合创建完成，数据量： {col.num_entities}")
-            self.vec_retr = self.vs.as_retriever(search_kwargs={"k":10})
-            self.ensemble = EnsembleRetriever(retrievers=[self.bm25,self.vec_retr],weights=[0.4,0.6])
+            self.vec_retr = self.vs.as_retriever(search_kwargs={"k": 10})
+            self.ensemble = EnsembleRetriever(retrievers=[self.bm25, self.vec_retr], weights=[0.4, 0.6])
             logger.info("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
 
         except Exception as e:
@@ -154,6 +163,13 @@ class OpsRetriever:
                 docs = self.ensemble.invoke(query)
                 docs = self._deduplicate(docs)
                 if docs:
+                    kg_context = self._get_kg_context(query)
+                    if kg_context:
+                        kg_doc = Document(
+                            page_content=kg_context,
+                            metadata={"source": "知识图谱", "doc_id": "kg_context"}
+                        )
+                        docs = [kg_doc] + docs
                     pairs = [(query, d.page_content) for d in docs]
                     scores = self.reranker.predict(pairs)
                     ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
@@ -164,8 +180,16 @@ class OpsRetriever:
         
         logger.info("📝 使用纯 BM25 检索...")
         docs = self.get_bm25_docs(query, top_k)
-        # 给 BM25 结果一个默认的高分数（0.8）
         return [(doc, 0.8) for doc in docs]
+
+    def _get_kg_context(self, query: str) -> str:
+        if not self.kg or not self.kg.is_available:
+            return ""
+        try:
+            return self.kg.format_graph_context(query, depth=2)
+        except Exception as e:
+            logger.warning(f"知识图谱查询失败: {e}")
+            return ""
 
     def merge_chunks(self,chunks):
         merge = []

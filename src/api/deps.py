@@ -2,7 +2,6 @@ import os
 import logging
 from typing import Optional
 from fastapi import Header
-from src.core.config import get_settings
 from src.core.security import get_current_user
 from src.retriever import OpsRetriever
 from src.graph import build_graph
@@ -36,6 +35,17 @@ def init_components():
 
     logger.info("初始化长期记忆中。。。。")
     _ltm = LongTermMemory()
+
+    logger.info("初始化通用文档问答服务中。。。。")
+    try:
+        from src.tools.document_qa import get_document_qa_service
+        doc_qa = get_document_qa_service()
+        if doc_qa and doc_qa._ensemble is not None:
+            logger.info("✅ 通用文档问答服务初始化成功（property_regulations 集合已就绪）")
+        else:
+            logger.info("📝 通用文档问答服务已创建（property_regulations 集合为空，等待文档上传）")
+    except Exception as e:
+        logger.warning(f"通用文档问答服务初始化失败: {e}")
 
     logger.info("构建Agent智能体中。。。。")
     _agent = build_agent(_retriever, _stm, _ltm)

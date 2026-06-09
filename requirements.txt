@@ -6,13 +6,22 @@ python-dotenv
 python-multipart
 
 # LangChain 生态
-langchain-core
-langchain-community
-langchain-classic
-langchain-text-splitters
-langchain-milvus
-langchain-openai
-langgraph
+langchain==1.2.15
+langchain-chroma==1.1.0
+langchain-classic==1.0.3
+langchain-community==0.4.1
+langchain-core==1.2.27
+langchain-milvus==0.3.3
+langchain-ollama==1.1.0
+langchain-openai==1.1.12
+langchain-text-splitters==1.1.1
+langgraph==1.1.6
+langgraph-checkpoint==4.0.1
+langgraph-prebuilt==1.0.9
+langgraph-sdk==0.3.13
+langsmith==0.7.26
+
+
 
 # 向量库与检索
 pymilvus
@@ -28,6 +37,14 @@ numpy
 
 # 文档处理
 pypdf
+
+# 知识图谱
+neo4j
+spacy
+
+# 爬虫
+requests
+beautifulsoup4
 
 # 系统监控工具
 psutil

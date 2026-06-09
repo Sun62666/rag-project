@@ -1,12 +1,7 @@
-"""
-SmartOps Agent 一键启动脚本
-直接运行: python start_agent.py
-"""
 import uvicorn
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")

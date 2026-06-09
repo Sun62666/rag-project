@@ -2,8 +2,7 @@ from typing import Dict
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from src.core.config import get_settings
-from src.retriever import OpsRetriever
-from src.tools import server_system_check, port_check, read_service_log, set_retriever
+from src.tools import server_system_check, port_check, read_service_log, set_retriever, knowledge_graph_query, knowledge_graph_extract
 from src.graph.nodes import (
     make_classify_node,
     make_rewrite_query_node,
@@ -48,8 +47,8 @@ def route_after_retrieve(state: Dict) -> str:
         return "execute_tools"
     return "generate"
 
-
-def build_graph(retriever: OpsRetriever):
+def build_graph(retriever):
+    from src.retriever import OpsRetriever
     set_retriever(retriever)
 
     cfg = get_settings()
@@ -70,7 +69,7 @@ def build_graph(retriever: OpsRetriever):
         streaming=False,
     )
 
-    system_tools = [server_system_check, port_check, read_service_log]
+    system_tools = [server_system_check, port_check, read_service_log, knowledge_graph_query, knowledge_graph_extract]
     llm_with_system_tools = llm.bind_tools(system_tools)
     system_tools_map = {t.name: t for t in system_tools}
 

@@ -4,10 +4,9 @@ import uuid
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
-# from langchain_milvus import Milvus
-from langchain_community.vectorstores import Milvus
-from pymilvus import connections, utility, Collection
+from langchain_milvus import Milvus as MilvusVS
 from src.core.config import get_settings
+from src.core.milvus_compat import ensure_milvus_connection, get_collection_count
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +19,8 @@ class LongTermMemory:
 
     def __init__(self):
         self.cfg = get_settings()
-        self._vs: Optional[Milvus] = None
+        self._vs: Optional[MilvusVS] = None
 
-        # 检测 Milvus 是否已配置
         if not self.cfg.MILVUS_URI or self.cfg.MILVUS_URI == self._MILVUS_PLACEHOLDER:
             logger.warning(f"[长期记忆] MILVUS_URI 未配置（当前值: {self.cfg.MILVUS_URI!r}），长期记忆不可用")
             return
@@ -34,36 +32,25 @@ class LongTermMemory:
         self._init_collection()
 
     def _init_collection(self):
-        max_retries = 3
-        last_err = None
-        for i in range(max_retries):
-            try:
-                connections.connect(alias="default", uri=self.cfg.MILVUS_URI)
-                # 验证连接是否真正可用
-                utility.has_collection(self.COLLECTION_NAME)
-                logger.info(f"[长期记忆] Milvus 连接成功")
-                break
-            except Exception as e:
-                last_err = e
-                if i < max_retries - 1:
-                    logger.warning(f"[长期记忆] Milvus 连接失败，3秒后重试: {e}")
-                    time.sleep(3)
-                else:
-                    logger.error(f"[长期记忆] Milvus 连接失败，长期记忆不可用: {last_err}")
-                    return
+        try:
+            client = ensure_milvus_connection(self.cfg.MILVUS_URI)
+            logger.info(f"[长期记忆] Milvus 连接成功")
+        except Exception as e:
+            logger.error(f"[长期记忆] Milvus 连接失败，长期记忆不可用: {e}")
+            return
 
         try:
-            if utility.has_collection(self.COLLECTION_NAME):
-                col = Collection(self.COLLECTION_NAME)
-                if col.num_entities > 0:
-                    col.load()
-                    self._vs = Milvus(
+            if client.has_collection(self.COLLECTION_NAME):
+                count = get_collection_count(client, self.COLLECTION_NAME)
+                if count > 0:
+                    self._vs = MilvusVS(
                         embedding_function=self._emb,
                         collection_name=self.COLLECTION_NAME,
-                        connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
-                        auto_id=True
+                        connection_args={"uri": self.cfg.MILVUS_URI},
+                        auto_id=True,
+                        enable_dynamic_field=True
                     )
-                    logger.info(f"[长期记忆] 加载已有记忆集合，共 {col.num_entities} 条")
+                    logger.info(f"[长期记忆] 加载已有记忆集合，共 {count} 条")
                     return
         except Exception as e:
             logger.warning(f"[长期记忆] 检查集合失败: {e}")
@@ -71,6 +58,12 @@ class LongTermMemory:
         logger.info(f"[长期记忆] 记忆集合不存在或为空，将在首次写入时创建")
 
     def save_memory(self, user_id: str, session_id: str, user_msg: str, assistant_msg: str):
+        try:
+            ensure_milvus_connection(self.cfg.MILVUS_URI)
+        except Exception:
+            logger.error("[长期记忆] 无法连接 Milvus，跳过保存")
+            return
+
         qa_text = f"问: {user_msg}\n答: {assistant_msg}"
         metadata = {
             "user_id": user_id,
@@ -82,15 +75,14 @@ class LongTermMemory:
 
         try:
             if self._vs is None:
-                self._vs = Milvus.from_documents(
+                self._vs = MilvusVS.from_documents(
                     [doc],
                     self._emb,
                     collection_name=self.COLLECTION_NAME,
-                    connection_args={"uri": self.cfg.MILVUS_URI,"alias": "default"},
+                    connection_args={"uri": self.cfg.MILVUS_URI},
+                    auto_id=True,
+                    enable_dynamic_field=True
                 )
-                col = Collection(self.COLLECTION_NAME)
-                col.flush()
-                col.load()
                 logger.info(f"[长期记忆] 创建记忆集合并写入首条记忆")
             else:
                 self._vs.add_documents([doc])

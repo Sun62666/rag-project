@@ -5,6 +5,8 @@ import subprocess
 from collections import Counter
 from langchain_core.tools import tool
 
+from src.core import get_settings
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_LOG = """2026-05-07 10:12:01 [ERROR] ConnectionTimeout: Redis connection failed after 30s
@@ -28,11 +30,16 @@ SAMPLE_LOG = """2026-05-07 10:12:01 [ERROR] ConnectionTimeout: Redis connection 
 2026-05-07 10:12:36 [INFO] Cron job cleanup executed
 2026-05-07 10:12:38 [ERROR] PortAlreadyInUse: 8080 occupied by process java(28432)
 """
+cfg = get_settings()
+_DEFAULT_LOG = getattr(cfg, 'LOG_PATH', os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "logs", "smartops.log"
+))
+_DEFAULT_ERROR_LOG = getattr(cfg, 'ERROR_LOG_PATH', os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "logs", "error.log"
+))
 
-
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_DEFAULT_LOG = os.path.join(_PROJECT_ROOT, "logs", "smartops.log")
-_DEFAULT_ERROR_LOG=os.path.join(_PROJECT_ROOT,"logs","error.log")
 
 def read_service_log_logic(log_path: str = "", lines: int = 20) -> str:
     if not log_path:
@@ -53,7 +60,7 @@ def read_service_log(log_path: str = "", lines: int = 20) -> str:
 
 
 @tool
-def log_error_stats(log_path: str = "", lines: int = 100) -> str:
+def log_error_stats(log_path: str = _DEFAULT_ERROR_LOG, lines: int = 100) -> str:
     """统计日志文件中的错误信息，包括错误类型分布、高频错误TOP5、时间趋势等。
     当用户询问日志错误统计、错误分析、日志排查时调用此工具。
     参数：log_path-日志文件路径（为空则使用示例数据），lines-读取行数"""

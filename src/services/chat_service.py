@@ -10,6 +10,61 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_MESSAGE = "当前知识库未覆盖该问题，建议转交人工运维专家。"
 
+_lora_inference = None
+
+
+def get_lora_inference():
+    global _lora_inference
+    if _lora_inference is not None:
+        return _lora_inference
+
+    cfg = get_settings()
+    if not cfg.USE_LORA or not cfg.LORA_BASE_MODEL or not cfg.LORA_WEIGHTS:
+        return None
+
+    try:
+        from src.finetune import LoRAInference
+        _lora_inference = LoRAInference(
+            base_model_path=cfg.LORA_BASE_MODEL,
+            lora_path=cfg.LORA_WEIGHTS,
+            use_gpu=True,
+        )
+        logger.info("[LoRA] 微调模型加载成功，可作为本地降级使用")
+        return _lora_inference
+    except Exception as e:
+        logger.warning(f"[LoRA] 微调模型加载失败: {e}")
+        return None
+
+
+async def handle_lora_fallback(query: str, session_id: str, username: str, stm, bg_tasks) -> StreamingResponse:
+    lora = get_lora_inference()
+    if not lora:
+        return None
+
+    logger.info(f"[LoRA] 使用本地微调模型回答: {query[:50]}")
+    stm.add_user_message(session_id, query)
+
+    try:
+        answer = lora.generate(query)
+    except Exception as e:
+        logger.error(f"[LoRA] 推理失败: {e}")
+        return None
+
+    stm.add_ai_message(session_id, answer)
+    bg_tasks.add_task(save_chat_history, session_id, query, answer, username)
+
+    async def lora_stream():
+        yield f"data: {json.dumps({'type': 'status', 'message': '本地微调模型回答中...'})}\n\n"
+        for char in answer:
+            yield f"data: {json.dumps({'type': 'token', 'content': char})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'from_cache': False, 'from_lora': True})}\n\n"
+
+    return StreamingResponse(
+        lora_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
 
 async def handle_cached_answer(query: str, session_id: str, username: str, stm, bg_tasks) -> StreamingResponse:
     cached = get_cache().get(f"ops:{query}")

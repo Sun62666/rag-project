@@ -6,10 +6,8 @@ from src.api.deps import init_components, cleanup_components
 from src.api.auth import router as auth_router
 from src.api.session import router as session_router
 from src.api.chat import router as chat_router
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", message=".*PyMilvusDeprecationWarning.*")
-
+from src.api.ops import router as ops_router
+from src.api.evaluate import router as evaluate_router
 setup_logging()
 
 
@@ -33,3 +31,5 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(session_router)
 app.include_router(chat_router)
+app.include_router(ops_router)
+app.include_router(evaluate_router)

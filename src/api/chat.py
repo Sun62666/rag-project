@@ -3,7 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from src.core.config import get_settings
 from src.api.deps import get_current_user_dep, get_agent, get_graph, get_stm
-from src.services.chat_service import handle_cached_answer, ask_agent, ask_graph
+from src.services.chat_service import handle_cached_answer, ask_agent, ask_graph, handle_lora_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,17 @@ async def ask(
     cfg = get_settings()
     stm = get_stm()
 
-    if cfg.USE_AGENT:
-        return await ask_agent(req, username, bg_tasks, get_agent(), stm)
-    else:
-        return await ask_graph(req, username, bg_tasks, get_graph(), stm)
+    try:
+        if cfg.USE_AGENT:
+            return await ask_agent(req, username, bg_tasks, get_agent(), stm)
+        else:
+            return await ask_graph(req, username, bg_tasks, get_graph(), stm)
+    except Exception as e:
+        logger.error(f"主模型调用失败: {e}，尝试LoRA降级...")
+        lora_response = await handle_lora_fallback(req.query, req.session_id, username, stm, bg_tasks)
+        if lora_response:
+            return lora_response
+        raise
 
 
 class ModeSwitch(BaseModel):

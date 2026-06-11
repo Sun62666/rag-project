@@ -24,6 +24,11 @@ def init_components():
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pdf_path = os.path.join(project_root, "data", "文档2.pdf")
 
+    # 如果 PDF 不存在，传空字符串让 OpsRetriever 从 Milvus 加载数据
+    if not os.path.exists(pdf_path):
+        logger.info(f"PDF 文件不存在: {pdf_path}，将从 Milvus 加载已有数据")
+        pdf_path = ""
+
     logger.info("初始化retriever中。。。。")
     _retriever = OpsRetriever(pdf_path)
 

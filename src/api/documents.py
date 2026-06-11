@@ -69,10 +69,19 @@ async def upload_document(
 
         _append_to_milvus(splits, col_name, cfg)
 
-        # 如果上传到通用文档库，重建 BM25 索引
+        # 重建 BM25 索引（确保 BM25 与 Milvus 数据源一致）
         if col_name == "property_regulations":
             from src.tools.document_qa import rebuild_document_qa_bm25
-            rebuild_document_qa_bm25(splits)
+            rebuild_document_qa_bm25()
+        elif col_name == cfg.COLLECTION_NAME:
+            # 上传到运维知识库时，重建 OpsRetriever 的 BM25
+            try:
+                from src.retriever import OpsRetriever
+                retriever = OpsRetriever("")
+                if retriever.initialized:
+                    retriever.rebuild_bm25()
+            except Exception as e:
+                logger.warning(f"重建运维知识库 BM25 失败: {e}")
 
         return UploadResponse(
             filename=file.filename,

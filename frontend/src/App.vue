@@ -196,6 +196,11 @@ const confirmRename = async (sessionId) => {
 }
 
 const handleLogout = async () => {
+  // 清除所有前端状态
+  sessions.value = []
+  currentSessionId.value = ''
+  messageCache.value = {}
+  initialized = false
   await authStore.logout()
   router.push('/login')
 }
@@ -383,7 +388,7 @@ body {
 }
 .mode-switch-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-.content-area { flex: 1; overflow-y: auto; }
+.content-area { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 
 /* 路由切换过渡 */
 .page-fade-enter-active { animation: pageIn 0.25s ease; }

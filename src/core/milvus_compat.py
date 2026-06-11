@@ -56,22 +56,21 @@ def ensure_milvus_connection(uri: str) -> MilvusClient:
 def get_collection_count(client: MilvusClient, collection_name: str) -> int:
     """使用 MilvusClient 获取集合的实体数量。
 
-    describe_collection 的 row_count 不准确（可能是0），
-    使用 client.query 获取实际数量。
+    Milvus 2.4+ 不允许 count(*) 带分页参数（limit），
+    必须只传 filter 和 output_fields，不传 limit。
     """
     if not client.has_collection(collection_name):
         return 0
     try:
-        # 使用 query 获取准确数量（describe_collection 的 row_count 不可靠）
-        result = client.query(collection_name, filter="", output_fields=["count(*)"])
+        # count(*) 不能带 limit 参数，否则报 "count entities with pagination is not allowed"
+        result = client.query(
+            collection_name=collection_name,
+            filter="",
+            output_fields=["count(*)"],
+        )
         if result and len(result) > 0:
-            # count(*) 结果在第一个字典中
             count_val = list(result[0].values())[0] if result[0] else 0
             return int(count_val) if count_val else 0
     except Exception:
         pass
-    try:
-        info = client.describe_collection(collection_name)
-        return info.get("row_count", 0)
-    except Exception:
-        return 0
+    return 0

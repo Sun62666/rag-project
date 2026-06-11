@@ -188,7 +188,7 @@ class OpsKnowledgeGraph:
         logger.info(f"[混合抽取] spaCy 抽取: {len(spacy_triples)} 个（新增后共 {len(all_triples)} 个）")
 
         # Step 3: 如果规则+spaCy抽取不足，用 LLM 补充
-        if len(all_triples) < 3:
+        if len(all_triples) < 15:
             llm_triples = self.extract_with_llm(text)
             _add_triples(llm_triples, "llm")
             logger.info(f"[混合抽取] LLM 补充: {len(llm_triples)} 个（新增后共 {len(all_triples)} 个）")
@@ -239,6 +239,9 @@ class OpsKnowledgeGraph:
                         "target": record["target"],
                         "target_type": record["target_type"] or "",
                     })
+                # 精确匹配无结果时，尝试模糊匹配
+                if not records:
+                    records = self._fuzzy_query_related(entity_name, depth)
                 return records
         except Exception as e:
             logger.error(f"[知识图谱] 查询失败: {e}")
@@ -259,10 +262,60 @@ class OpsKnowledgeGraph:
                             "target": record["target"],
                             "target_type": record["target_type"] or "",
                         })
+                    if not records:
+                        return self._fuzzy_query_related(entity_name, depth)
                     return records
             except Exception as e2:
                 logger.error(f"[知识图谱] 降级查询也失败: {e2}")
                 return []
+
+    def _fuzzy_query_related(self, entity_name: str, depth: int = 1) -> List[Dict]:
+        """模糊匹配查询：当精确匹配无结果时，用 CONTAINS 查找相似实体"""
+        if not self._connected:
+            return []
+        try:
+            with self._driver.session() as session:
+                # 先找到模糊匹配的实体名
+                fuzzy_result = session.run(
+                    "MATCH (n) WHERE n.name CONTAINS $name OR $name CONTAINS n.name "
+                    "RETURN n.name AS name LIMIT 5",
+                    name=entity_name,
+                )
+                matched_names = [r["name"] for r in fuzzy_result if r["name"]]
+                if not matched_names:
+                    return []
+                logger.info(f"[知识图谱] 模糊匹配 '{entity_name}' -> {matched_names}")
+                # 对匹配到的实体查询关联关系
+                all_records = []
+                seen = set()
+                for name in matched_names:
+                    query = (
+                        f"MATCH path = (e {{name: $name}})-[r*1..{depth}]-(n) "
+                        f"UNWIND relationships(path) AS rel "
+                        f"RETURN DISTINCT startNode(rel).name AS source, "
+                        f"labels(startNode(rel))[0] AS source_type, "
+                        f"type(rel) AS relation, "
+                        f"endNode(rel).name AS target, "
+                        f"labels(endNode(rel))[0] AS target_type"
+                    )
+                    result = session.run(query, name=name)
+                    for record in result:
+                        if not record["source"] or not record["target"]:
+                            continue
+                        key = f"{record['source']}-{record['relation']}-{record['target']}"
+                        if key not in seen:
+                            seen.add(key)
+                            all_records.append({
+                                "source": record["source"],
+                                "source_type": record["source_type"] or "",
+                                "relation": record["relation"],
+                                "target": record["target"],
+                                "target_type": record["target_type"] or "",
+                            })
+                return all_records
+        except Exception as e:
+            logger.debug(f"[知识图谱] 模糊查询失败: {e}")
+            return []
 
     def query_fault_chain(self, fault_name: str) -> List[Dict]:
         """查询故障链路：包括故障的原因链和影响链
@@ -387,26 +440,12 @@ class OpsKnowledgeGraph:
         fault_chains = []
         fix_results = []
         for entity_name in ops_entities:
-            # 查故障链
+            # 查故障链（包含原因链 + 影响链 + 多跳因果链）
             chain = self.query_fault_chain(entity_name)
             if chain:
                 fault_chains.extend(chain)
-            # 也查该实体导致的故障链
-            try:
-                if self._connected:
-                    with self._driver.session() as session:
-                        cause_chain = session.run(
-                            "MATCH (comp:Component {name: $name})-[r:causes]->(f) "
-                            "RETURN comp.name AS from_entity, 'Component' AS from_type, "
-                            "type(r) AS relation, f.name AS to_entity, labels(f)[0] AS to_type",
-                            name=entity_name,
-                        )
-                        for record in cause_chain:
-                            fault_chains.append(dict(record))
-            except Exception:
-                pass
 
-            # 查修复方案
+            # 查修复方案（包含直接修复 + 配置间接修复 + 模糊匹配）
             fixes = self.query_fix_for_fault(entity_name)
             if fixes:
                 fix_results.extend(fixes)
@@ -433,26 +472,78 @@ class OpsKnowledgeGraph:
         return context
 
     def _extract_entities_from_query(self, query: str) -> List[str]:
-        known_components = [
-            "Redis", "MySQL", "Nginx", "Docker", "Kubernetes", "K8s",
-            "Linux", "CentOS", "Ubuntu", "Tomcat", "Apache", "Kafka",
-            "RabbitMQ", "Elasticsearch", "MongoDB", "PostgreSQL",
-            "Prometheus", "Grafana", "Jenkins", "GitLab", "etcd",
-            "Zookeeper", "Hadoop", "Spark", "Flink",
-        ]
-        known_faults = [
-            "OOM", "OutOfMemory", "超时", "timeout", "连接失败",
-            "CPU满载", "CPU过高", "磁盘满", "内存溢出", "内存泄漏",
-            "连接数满", "端口占用", "服务不可用", "502", "503", "500",
-        ]
+        """从用户问题中抽取实体名称，用于知识图谱查询
+
+        采用三级抽取策略：
+        1. 规则模板快速匹配（零延迟）
+        2. 图数据库索引匹配（精确，利用已有实体）
+        3. spaCy NLP 抽取（中等延迟，处理自然语言表述）
+        """
         found = []
-        query_lower = query.lower()
-        for comp in known_components:
-            if comp.lower() in query_lower:
-                found.append(comp)
-        for fault in known_faults:
-            if fault.lower() in query_lower:
-                found.append(fault)
+        seen = set()
+
+        def _add(name: str):
+            name = name.strip()
+            if name and name not in seen:
+                seen.add(name)
+                found.append(name)
+
+        # ---- 级别1: 规则模板快速匹配（复用 rule_extractor 的实体模式） ----
+        try:
+            from src.graph.extractors.rule_extractor import extract_components, extract_faults
+            for e in extract_components(query):
+                _add(e["name"])
+            for e in extract_faults(query):
+                _add(e["name"])
+        except Exception:
+            # 降级：硬编码兜底
+            known_components = [
+                "Redis", "MySQL", "Nginx", "Docker", "Kubernetes", "K8s",
+                "Linux", "CentOS", "Ubuntu", "Tomcat", "Apache", "Kafka",
+                "RabbitMQ", "Elasticsearch", "MongoDB", "PostgreSQL",
+                "Prometheus", "Grafana", "Jenkins", "GitLab", "etcd",
+                "Zookeeper", "Hadoop", "Spark", "Flink",
+            ]
+            known_faults = [
+                "OOM", "OutOfMemory", "超时", "timeout", "连接失败",
+                "CPU满载", "CPU过高", "磁盘满", "内存溢出", "内存泄漏",
+                "连接数满", "端口占用", "服务不可用", "502", "503", "500",
+            ]
+            query_lower = query.lower()
+            for comp in known_components:
+                if comp.lower() in query_lower:
+                    _add(comp)
+            for fault in known_faults:
+                if fault.lower() in query_lower:
+                    _add(fault)
+
+        # ---- 级别2: 图数据库索引匹配（查询 Neo4j 中已有的实体名） ----
+        if self._connected:
+            try:
+                with self._driver.session() as session:
+                    # 模糊匹配：用户问题中包含图中的实体名
+                    result = session.run("MATCH (n) RETURN n.name AS name")
+                    for record in result:
+                        name = record["name"]
+                        if name and name in query:
+                            _add(name)
+                        # 反向匹配：实体名包含在用户问题中（处理简称）
+                        elif name and len(name) > 1 and name.lower() in query.lower():
+                            _add(name)
+            except Exception as e:
+                logger.debug(f"[知识图谱] 图索引匹配失败: {e}")
+
+        # ---- 级别3: spaCy NLP 抽取（处理自然语言表述） ----
+        if len(found) < 2:  # 如果前两级已找到足够实体，跳过 spaCy
+            try:
+                from src.graph.extractors.spacy_extractor import extract_entities
+                spacy_entities = extract_entities(query)
+                for e in spacy_entities:
+                    _add(e["name"])
+            except Exception:
+                pass
+
+        logger.info(f"[知识图谱] 从问题中抽取实体: {found}")
         return found
 
     # ========== 统计 ==========

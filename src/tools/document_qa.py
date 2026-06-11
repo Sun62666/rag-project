@@ -36,6 +36,7 @@ class DocumentQAService:
         self._ensemble = None
         self._reranker = None
         self._splits: List[Document] = []
+        self._milvus_client = None
 
         self._init_reranker()
         self._init_milvus()
@@ -56,9 +57,10 @@ class DocumentQAService:
             if not uri.startswith("http://") and not uri.startswith("https://"):
                 uri = f"http://{uri}"
 
-            client = ensure_milvus_connection(uri)
-            if client.has_collection(self.collection_name):
-                count = get_collection_count(client, self.collection_name)
+            # 保存连接为实例属性，后续 _load_bm25_from_milvus / rebuild_bm25 复用
+            self._milvus_client = ensure_milvus_connection(uri)
+            if self._milvus_client.has_collection(self.collection_name):
+                count = get_collection_count(self._milvus_client, self.collection_name)
                 if count > 0:
                     self._vs = MilvusVS(
                         embedding_function=self._emb,
@@ -68,11 +70,54 @@ class DocumentQAService:
                         enable_dynamic_field=True
                     )
                     logger.info(f"[DocumentQA] 加载已有集合 {self.collection_name}，共 {count} 条")
+                    # 从 Milvus 全量加载构建 BM25，确保数据源一致
+                    self._load_bm25_from_milvus()
                     self._init_ensemble()
                     return
             logger.info(f"[DocumentQA] 集合 {self.collection_name} 不存在或为空，等待文档上传")
         except Exception as e:
             logger.error(f"[DocumentQA] Milvus 初始化失败: {e}")
+            self._milvus_client = None
+
+    def _load_bm25_from_milvus(self):
+        """从 Milvus 全量加载数据构建 BM25 索引，确保 BM25 与向量检索数据源一致。
+        复用初始化时保存的 MilvusClient 连接，避免频繁创建/销毁连接。"""
+        if self._milvus_client is None:
+            logger.error("[DocumentQA] MilvusClient 未初始化，无法加载 BM25 数据")
+            return
+
+        try:
+            if not self._milvus_client.has_collection(self.collection_name):
+                return
+
+            results = self._milvus_client.query(
+                collection_name=self.collection_name,
+                filter="",
+                output_fields=["text", "source", "doc_id"],
+                limit=10000,
+            )
+
+            docs = []
+            for row in results:
+                text = row.get("text", "")
+                if not text:
+                    continue
+                metadata = {}
+                if row.get("source"):
+                    metadata["source"] = row["source"]
+                if row.get("doc_id"):
+                    metadata["doc_id"] = row["doc_id"]
+                docs.append(Document(page_content=text, metadata=metadata))
+
+            if docs:
+                self._splits = docs
+                self._bm25 = BM25Retriever.from_documents(docs)
+                self._bm25.k = 10
+                logger.info(f"[DocumentQA] ✅ BM25 索引构建完成（{len(docs)} 个切片来自 Milvus）")
+            else:
+                logger.info(f"[DocumentQA] 集合 {self.collection_name} 中无数据，BM25 不可用")
+        except Exception as e:
+            logger.error(f"[DocumentQA] 从 Milvus 加载 BM25 数据失败: {e}")
 
     def _init_ensemble(self):
         if self._vs is None:
@@ -82,8 +127,9 @@ class DocumentQAService:
             if self._bm25 is not None:
                 self._ensemble = EnsembleRetriever(
                     retrievers=[self._bm25, vec_retr],
-                    weights=[0.4, 0.6]
+                    weights=[0.2, 0.8]
                 )
+                logger.info("混合检索加载成功，权重比为：(0.2：0.8)")
             else:
                 self._ensemble = vec_retr
             logger.info(f"[DocumentQA] 混合检索器初始化成功")
@@ -91,14 +137,43 @@ class DocumentQAService:
             logger.error(f"[DocumentQA] 混合检索器初始化失败: {e}")
             self._ensemble = None
 
-    def rebuild_bm25(self, splits: List[Document]):
-        """重建 BM25 索引（文档上传后调用）"""
-        if splits:
-            self._splits = splits
-            self._bm25 = BM25Retriever.from_documents(splits)
-            self._bm25.k = 10
-            self._init_ensemble()
-            logger.info(f"[DocumentQA] BM25 索引重建完成，{len(splits)} 个切片")
+    def rebuild_bm25(self, splits: List[Document] = None):
+        """重建 BM25 索引（文档上传后调用）
+
+        优先从 Milvus 全量加载确保数据源一致；
+        如果传入 splits 参数则追加到现有数据后重建。
+        同时重建向量检索器（首次初始化时 _vs 可能为 None）。
+        """
+        logger.info(f"[DocumentQA] 开始重建索引（BM25 + 向量检索）...")
+
+        # 重建向量检索器：如果首次初始化时集合为空，_vs 为 None，现在有数据了需要重建
+        if self._vs is None and self._milvus_client is not None:
+            try:
+                if self._milvus_client.has_collection(self.collection_name):
+                    from src.core.milvus_compat import get_collection_count
+                    count = get_collection_count(self._milvus_client, self.collection_name)
+                    if count > 0:
+                        uri = self.cfg.MILVUS_URI
+                        if not uri.startswith("http://") and not uri.startswith("https://"):
+                            uri = f"http://{uri}"
+                        self._vs = MilvusVS(
+                            embedding_function=self._emb,
+                            collection_name=self.collection_name,
+                            connection_args={"uri": uri},
+                            auto_id=True,
+                            enable_dynamic_field=True
+                        )
+                        logger.info(f"[DocumentQA] ✅ 向量检索器重建成功")
+            except Exception as e:
+                logger.error(f"[DocumentQA] 向量检索器重建失败: {e}")
+
+        # 始终从 Milvus 全量加载，确保 BM25 与向量检索数据源一致
+        self._load_bm25_from_milvus()
+        self._init_ensemble()
+        if self._bm25:
+            logger.info(f"[DocumentQA] ✅ BM25 索引重建完成（{len(self._splits)} 个切片）")
+        else:
+            logger.warning("[DocumentQA] ⚠ BM25 重建失败")
 
     def search(self, query: str, top_k: int = 10) -> List[tuple]:
         """混合检索 + 重排序，返回 (Document, score) 列表"""
@@ -155,11 +230,11 @@ def get_document_qa_service() -> Optional[DocumentQAService]:
     return _document_qa_instance
 
 
-def rebuild_document_qa_bm25(splits):
-    """文档上传后重建 BM25"""
+def rebuild_document_qa_bm25(splits=None):
+    """文档上传后重建 BM25（从 Milvus 全量加载，splits 参数已忽略）"""
     svc = get_document_qa_service()
     if svc:
-        svc.rebuild_bm25(splits)
+        svc.rebuild_bm25()
 
 
 @tool

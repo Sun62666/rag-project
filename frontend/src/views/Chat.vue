@@ -12,8 +12,9 @@
                 <span class="dot"></span><span class="dot"></span><span class="dot"></span>
               </span>
             </div>
-            <div v-if="msg.content" class="message-actions">
-              <button class="action-btn" @click="copyMessage(msg.content, $event)" title="复制">
+            <div class="message-meta">
+              <span class="msg-time">{{ formatTime(msg.time) }}</span>
+              <button v-if="msg.content" class="action-btn" @click="copyMessage(msg.content, $event)" title="复制">
                 <i class="fa-regular fa-copy"></i>
               </button>
             </div>
@@ -23,6 +24,9 @@
         <template v-else>
           <div class="message-body user-body">
             <div class="bubble user-bubble">{{ msg.content }}</div>
+            <div class="message-meta user-meta">
+              <span class="msg-time">{{ formatTime(msg.time) }}</span>
+            </div>
           </div>
           <div class="avatar user-avatar"><i class="fa-solid fa-user"></i></div>
         </template>
@@ -44,17 +48,19 @@
     </div>
 
     <div class="input-area">
-      <textarea
-        v-model="query"
-        placeholder="输入运维问题... (Enter 发送, Shift+Enter 换行)"
-        rows="2"
-        @keydown.enter.exact.prevent="sendQuery"
-        :disabled="isLoading"
-        class="chat-input"
-      ></textarea>
-      <button class="send-btn" :disabled="isLoading || !query.trim()" @click="sendQuery">
-        <i class="fa-solid fa-paper-plane"></i>
-      </button>
+      <div class="input-wrapper">
+        <textarea
+          v-model="query"
+          placeholder="输入运维问题... (Enter 发送, Shift+Enter 换行)"
+          rows="2"
+          @keydown.enter.exact.prevent="sendQuery"
+          :disabled="isLoading"
+          class="chat-input"
+        ></textarea>
+        <button class="send-btn" :disabled="isLoading || !query.trim()" @click="sendQuery">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -89,9 +95,17 @@ const quickQuestions = [
   { text: 'Docker容器无法启动怎么排查？', label: 'Docker容器问题', icon: 'fa-brands fa-docker' },
 ]
 
+const formatTime = (time) => {
+  if (!time) return ''
+  const d = new Date(time)
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
 const scrollToBottom = async () => {
   await nextTick()
-  if (chatRef.value) chatRef.value.scrollTop = chatRef.value.scrollHeight
+  if (chatRef.value) {
+    chatRef.value.scrollTo({ top: chatRef.value.scrollHeight, behavior: 'smooth' })
+  }
 }
 
 const renderMarkdown = (text) => {
@@ -142,7 +156,7 @@ const loadHistory = async (sessionId) => {
   try {
     const res = await sessionAPI.get(sessionId)
     if (res.data.status === 'ok' && res.data.history?.length > 0) {
-      messages.value = res.data.history.map(h => ({ role: h.role, content: h.content }))
+      messages.value = res.data.history.map(h => ({ role: h.role, content: h.content, time: h.time || Date.now() }))
     } else {
       messages.value = []
     }
@@ -157,8 +171,8 @@ const sendQuery = async () => {
   query.value = ''
   const sid = currentSessionId.value
 
-  messages.value.push({ role: 'user', content: userQuery })
-  messages.value.push({ role: 'assistant', content: '', cached: false })
+  messages.value.push({ role: 'user', content: userQuery, time: Date.now() })
+  messages.value.push({ role: 'assistant', content: '', cached: false, time: Date.now() })
   statusText.value = '⏳ 正在连接...'
   statusClass.value = 'loading'
   await scrollToBottom()
@@ -210,7 +224,6 @@ const sendQuery = async () => {
 }
 
 watch(currentSessionId, (newSid, oldSid) => {
-  // 切换前保存当前会话的消息到缓存
   if (oldSid && messages.value.length > 0) {
     messageCache.value[oldSid] = [...messages.value]
   }
@@ -226,7 +239,6 @@ onMounted(() => {
   }
 })
 
-// 组件卸载时保存当前会话消息到缓存
 onBeforeUnmount(() => {
   const sid = currentSessionId.value
   if (sid && messages.value.length > 0) {
@@ -234,56 +246,104 @@ onBeforeUnmount(() => {
   }
 })
 
-// 从 KeepAlive 缓存恢复时滚动到底部
 onActivated(() => {
+  if (currentSessionId.value && !messageCache.value[currentSessionId.value] && messages.value.length > 0) {
+    messages.value = []
+    loadHistory(currentSessionId.value)
+  }
   scrollToBottom()
 })
 </script>
 
 <style scoped>
-.chat-view { display: flex; flex-direction: column; height: 100%; background: var(--bg-primary); }
-.chat-container { flex: 1; overflow-y: auto; padding: 24px 32px; }
+/* ===== 基础布局 ===== */
+.chat-view {
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg-primary);
+}
+.chat-container {
+  flex: 1; overflow-y: auto; padding: 28px 0;
+  scroll-behavior: smooth;
+}
 
-/* ===== 消息布局: 助手左, 用户右 ===== */
-.message-row { display: flex; gap: 12px; margin-bottom: 24px; align-items: flex-start; }
+/* ===== 消息行 ===== */
+.message-row {
+  display: flex; gap: 14px; margin-bottom: 28px; align-items: flex-start;
+  padding: 0 48px;
+  animation: msgFadeIn 0.35s ease-out;
+}
+@keyframes msgFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-/* 助手消息：靠左 */
 .message-row.assistant { justify-content: flex-start; }
-/* 用户消息：靠右 */
 .message-row.user { justify-content: flex-end; }
 
+/* ===== 头像 ===== */
 .avatar {
-  width: 38px; height: 38px; border-radius: 50%; display: flex;
+  width: 40px; height: 40px; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+  margin-top: 2px;
 }
-.assistant-avatar { background: linear-gradient(135deg, #8B5CF6, #A855F7); color: #fff; }
-.user-avatar { background: linear-gradient(135deg, #3B82F6, #6366F1); color: #fff; }
+.assistant-avatar {
+  background: linear-gradient(135deg, #8B5CF6, #A855F7);
+  color: #fff;
+}
+.user-avatar {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
 
-.message-body { max-width: 72%; min-width: 0; }
+/* ===== 消息体 ===== */
+.message-body { max-width: 75%; min-width: 60px; }
 
+/* ===== 气泡 ===== */
 .bubble {
-  padding: 14px 18px; border-radius: 14px; line-height: 1.75; font-size: 14px;
-  word-break: break-word;
+  padding: 14px 20px; line-height: 1.8; font-size: 14px;
+  word-break: break-word; letter-spacing: 0.2px;
+  position: relative;
 }
-.assistant-bubble {
-  background: var(--bg-secondary); color: var(--text-primary);
-  border: 1px solid var(--border); border-bottom-left-radius: 4px;
-}
-.user-bubble {
-  background: linear-gradient(135deg, #3B82F6, #6366F1); color: #fff;
-  border-bottom-right-radius: 4px;
-}
-.bubble.cached { border-color: rgba(34,197,94,0.4); }
 
-.message-actions { margin-top: 6px; display: flex; gap: 4px; }
+/* 助手气泡：半透明深色背景 + 左下锐角 */
+.assistant-bubble {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-primary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  backdrop-filter: blur(8px);
+}
+.assistant-bubble.cached { border-color: rgba(34,197,94,0.35); }
+
+/* 用户气泡：蓝紫渐变 + 右下锐角 */
+.user-bubble {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: 0 4px 18px rgba(102,126,234,0.3);
+}
+
+/* ===== 消息元信息（时间戳+操作） ===== */
+.message-meta {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 6px; padding-left: 4px;
+}
+.user-meta {
+  justify-content: flex-end; padding-right: 4px; padding-left: 0;
+}
+.msg-time {
+  font-size: 11px; color: var(--text-dim); letter-spacing: 0.3px;
+}
 .action-btn {
   background: none; border: none; color: var(--text-dim); cursor: pointer;
-  padding: 4px 8px; border-radius: 4px; font-size: 13px; transition: all 0.15s;
+  padding: 3px 7px; border-radius: 6px; font-size: 12px; transition: all 0.2s;
 }
-.action-btn:hover { color: var(--accent); background: rgba(59,130,246,0.1); }
+.action-btn:hover { color: var(--accent); background: rgba(59,130,246,0.12); }
 
-/* 打字动画 */
-.typing-indicator { display: inline-flex; gap: 5px; padding: 4px 0; }
+/* ===== 打字动画 ===== */
+.typing-indicator { display: inline-flex; gap: 6px; padding: 6px 0; }
 .dot {
   width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
   animation: blink 1.4s infinite;
@@ -292,7 +352,7 @@ onActivated(() => {
 .dot:nth-child(3) { animation-delay: 0.4s; }
 @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
 
-/* 空状态 */
+/* ===== 空状态 ===== */
 .empty-state { text-align: center; padding: 80px 20px; }
 .empty-icon { font-size: 56px; color: var(--accent); margin-bottom: 20px; opacity: 0.8; }
 .empty-title { font-size: 26px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
@@ -303,9 +363,12 @@ onActivated(() => {
   background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px;
   cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px;
 }
-.quick-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); transform: translateY(-1px); }
+.quick-btn:hover {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(59,130,246,0.08); transform: translateY(-1px);
+}
 
-/* 状态栏 */
+/* ===== 状态栏 ===== */
 .status-bar {
   padding: 8px 24px; font-size: 13px; background: var(--bg-secondary);
   border-top: 1px solid var(--border);
@@ -314,30 +377,36 @@ onActivated(() => {
 .status-bar.done { color: var(--success); }
 .status-bar.error { color: var(--danger); }
 
-/* 输入区 */
+/* ===== 输入区 ===== */
 .input-area {
-  display: flex; gap: 12px; padding: 16px 24px; background: var(--bg-secondary);
-  border-top: 1px solid var(--border); align-items: flex-end;
+  padding: 14px 24px 18px; background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
+.input-wrapper {
+  width: 100%; display: flex; gap: 10px; align-items: center;
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 8px 8px 8px 16px;
+  transition: border-color 0.2s;
+}
+.input-wrapper:focus-within { border-color: var(--accent); }
 .chat-input {
-  flex: 1; background: var(--bg-primary); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 16px; color: var(--text-primary);
-  font-size: 14px; resize: none; outline: none; line-height: 1.5;
-  font-family: inherit;
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: var(--text-primary); font-size: 14px; font-family: inherit;
+  line-height: 1.5; resize: none;
 }
 .chat-input::placeholder { color: var(--text-dim); }
-.chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
 .send-btn {
-  width: 44px; height: 44px; border-radius: 10px; border: none;
-  background: linear-gradient(135deg, #3B82F6, #6366F1); color: #fff;
-  cursor: pointer; transition: all 0.2s; display: flex; align-items: center;
-  justify-content: center; font-size: 16px; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 50%; border: none; flex-shrink: 0;
+  background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; transition: opacity 0.15s;
 }
-.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(59,130,246,0.35); }
-.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.send-btn:hover:not(:disabled) { opacity: 0.85; }
+.send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* Markdown 渲染样式 */
+/* ===== Markdown 渲染样式 ===== */
 .markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
   color: var(--text-primary); margin: 16px 0 8px; font-weight: 600;
 }
@@ -372,4 +441,13 @@ onActivated(() => {
 .markdown-body :deep(th) { background: var(--bg-tertiary); color: var(--text-primary); font-weight: 600; }
 .markdown-body :deep(strong) { color: var(--text-primary); }
 .markdown-body :deep(em) { color: var(--text-secondary); }
+
+/* ===== 响应式：移动端 ===== */
+@media (max-width: 768px) {
+  .message-row { padding: 0 16px; gap: 10px; }
+  .message-body { max-width: 88%; }
+  .avatar { width: 32px; height: 32px; font-size: 14px; }
+  .bubble { padding: 12px 14px; font-size: 13px; }
+  .input-area { padding: 12px 12px 16px; }
+}
 </style>

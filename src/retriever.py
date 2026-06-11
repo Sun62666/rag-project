@@ -17,13 +17,13 @@ from src.core.milvus_compat import ensure_milvus_connection, get_collection_coun
 logger = logging.getLogger(__name__)
 class OpsRetriever:
     _instance = None
-    def __new__(cls, pdf_path: str):
+    def __new__(cls, pdf_path: str = ""):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.initialized = False
         return cls._instance
 
-    def __init__(self,pdf_path: str):
+    def __init__(self, pdf_path: str = ""):
 
         if self.initialized:
             return
@@ -31,18 +31,18 @@ class OpsRetriever:
         self.cfg = get_settings()
         logger.info("初始化配置成功。。。。")
 
+        self.splits = []
+        self._milvus_client = None
         if pdf_path:
             self._split_docs(pdf_path)
             logger.info("划分文档成功。。。。")
-
             self._inject_doc_ids()
             logger.info("注入doc_id成功。。。。")
-
         else:
-            logger.info("pdf_path为None，划分文档失败。。。。")
+            logger.info("pdf_path为空，将从 Milvus 加载已有数据构建 BM25")
 
         self._init_retrievers()
-        logger.info("检索其初始化成功。。。。")
+        logger.info("检索器初始化成功。。。。")
 
         rerank_model_path = self.cfg.LORA_RERANK_MODEL if self.cfg.LORA_RERANK_MODEL else self.cfg.RERANK_MODEL
         self.reranker = CrossEncoder(rerank_model_path)
@@ -81,16 +81,18 @@ class OpsRetriever:
         collection_count = 0
 
         # 使用兼容性补丁连接 Milvus（pymilvus 2.6.x ConnectionManager 与 ORM 不兼容）
+        # 保存连接为实例属性，后续 _load_all_from_milvus / rebuild_bm25 复用
         try:
-            client = ensure_milvus_connection(self.cfg.MILVUS_URI)
+            self._milvus_client = ensure_milvus_connection(self.cfg.MILVUS_URI)
             logger.info("✅ Milvus 连接成功！")
-            if client.has_collection(self.cfg.COLLECTION_NAME):
-                collection_count = get_collection_count(client, self.cfg.COLLECTION_NAME)
+            if self._milvus_client.has_collection(self.cfg.COLLECTION_NAME):
+                collection_count = get_collection_count(self._milvus_client, self.cfg.COLLECTION_NAME)
                 if collection_count > 0:
                     collection_exists = True
                     logger.info(f"√ 检测到现有向量库（{collection_count} 条数据），跳过重建")
         except Exception as e:
             logger.error(f"❌ Milvus 连接失败，将仅使用 BM25 检索: {e}")
+            self._milvus_client = None
             if self.splits:
                 self.bm25 = BM25Retriever.from_documents(self.splits)
                 self.bm25.k = 10
@@ -105,14 +107,7 @@ class OpsRetriever:
         self.vec_retr = None
         self.bm25 = None
 
-        # 初始化 BM25
-        if self.splits:
-            self.bm25 = BM25Retriever.from_documents(self.splits)
-            self.bm25.k = 10
-        else:
-            logger.warning("⚠ 文档切片为空，BM25 检索不可用")
-
-        # 初始化 Milvus 向量检索
+        # 初始化 Milvus 向量检索（必须先初始化，后续可能从中加载数据）
         try:
             emb = DashScopeEmbeddings(model=self.cfg.EMBED_MODEL, dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
 
@@ -126,7 +121,7 @@ class OpsRetriever:
                 )
             else:
                 if not self.splits:
-                    logger.warning("文档切片为空，无法创建 Milvus 集合")
+                    logger.warning("文档切片为空且 Milvus 无数据，无法初始化检索器")
                     self.ensemble = None
                     return
                 logger.info("创建新的 Milvus 集合并导入数据...")
@@ -140,12 +135,102 @@ class OpsRetriever:
                 logger.info("集合创建完成")
 
             self.vec_retr = self.vs.as_retriever(search_kwargs={"k": 10})
-            self.ensemble = EnsembleRetriever(retrievers=[self.bm25, self.vec_retr], weights=[0.4, 0.6])
-            logger.info("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
-
         except Exception as e:
             logger.error(f"⚠ Milvus 初始化失败，仅使用 BM25 检索: {e}")
+            self.vs = None
+            self.vec_retr = None
+
+        # 初始化 BM25：始终从 Milvus 全量加载，确保与向量检索数据源一致
+        # 即使有本地 PDF splits，Milvus 可能包含更多上传数据，BM25 必须覆盖全量
+        if self.vs is not None:
+            logger.info("📝 从 Milvus 全量加载构建 BM25（确保与向量检索数据源一致）...")
+            milvus_splits = self._load_all_from_milvus()
+            if milvus_splits:
+                self.splits = milvus_splits
+                self.bm25 = BM25Retriever.from_documents(milvus_splits)
+                self.bm25.k = 10
+                logger.info(f"✅ BM25 索引构建完成（{len(milvus_splits)} 个切片来自 Milvus 全量）")
+            elif self.splits:
+                # Milvus 查询失败时降级使用本地 splits
+                self.bm25 = BM25Retriever.from_documents(self.splits)
+                self.bm25.k = 10
+                logger.warning(f"⚠ Milvus 加载失败，降级使用本地文档（{len(self.splits)} 个切片，可能不完整）")
+            else:
+                logger.warning("⚠ Milvus 中无数据且无本地文档，BM25 不可用")
+                self.bm25 = None
+        elif self.splits:
+            # Milvus 不可用时的降级方案
+            self.bm25 = BM25Retriever.from_documents(self.splits)
+            self.bm25.k = 10
+            logger.warning(f"⚠ Milvus 不可用，BM25 仅基于本地文档（{len(self.splits)} 个切片，可能不完整）")
+        else:
+            logger.warning("⚠ 文档切片为空，BM25 检索不可用")
+
+        # 构建混合检索器
+        if self.bm25 and self.vec_retr:
+            self.ensemble = EnsembleRetriever(retrievers=[self.bm25, self.vec_retr], weights=[0.4, 0.6])
+            logger.info("✅ 混合检索器初始化成功（BM25 + Milvus 向量）")
+        elif self.vec_retr:
+            self.ensemble = self.vec_retr
+            logger.info("✅ 仅向量检索器可用")
+        elif self.bm25:
+            self.ensemble = None  # 降级到 BM25
+            logger.info("✅ 仅 BM25 检索可用")
+        else:
             self.ensemble = None
+            logger.warning("⚠ 无可用检索器")
+
+    def _load_all_from_milvus(self) -> List[Document]:
+        """从 Milvus 全量加载数据构建 BM25 索引，确保 BM25 与向量检索数据源一致。
+        复用初始化时保存的 MilvusClient 连接，避免频繁创建/销毁连接。"""
+        if self._milvus_client is None:
+            logger.error("[Milvus加载] MilvusClient 未初始化，无法加载数据")
+            return []
+
+        try:
+            if not self._milvus_client.has_collection(self.cfg.COLLECTION_NAME):
+                return []
+
+            # 查询全量数据（只取 text 和 metadata 字段）
+            results = self._milvus_client.query(
+                collection_name=self.cfg.COLLECTION_NAME,
+                filter="",
+                output_fields=["text", "source", "doc_id"],
+                limit=10000,
+            )
+
+            docs = []
+            for row in results:
+                text = row.get("text", "")
+                if not text:
+                    continue
+                metadata = {}
+                if row.get("source"):
+                    metadata["source"] = row["source"]
+                if row.get("doc_id"):
+                    metadata["doc_id"] = row["doc_id"]
+                docs.append(Document(page_content=text, metadata=metadata))
+
+            logger.info(f"[Milvus加载] 从 {self.cfg.COLLECTION_NAME} 加载 {len(docs)} 条数据")
+            return docs
+        except Exception as e:
+            logger.error(f"[Milvus加载] 从 Milvus 加载数据失败: {e}")
+            return []
+
+    def rebuild_bm25(self):
+        """重建 BM25 索引（文档上传后调用），从 Milvus 全量加载确保数据源一致"""
+        logger.info("[OpsRetriever] 开始重建 BM25 索引...")
+        milvus_splits = self._load_all_from_milvus()
+        if milvus_splits:
+            self.splits = milvus_splits
+            self.bm25 = BM25Retriever.from_documents(milvus_splits)
+            self.bm25.k = 10
+            # 重建混合检索器
+            if self.vec_retr:
+                self.ensemble = EnsembleRetriever(retrievers=[self.bm25, self.vec_retr], weights=[0.4, 0.6])
+            logger.info(f"[OpsRetriever] ✅ BM25 索引重建完成（{len(milvus_splits)} 个切片）")
+        else:
+            logger.warning("[OpsRetriever] ⚠ Milvus 中无数据，BM25 重建失败")
 
     def retriever_and_rerank(self, query: str, top_k: int = 3) -> List[str]:
 

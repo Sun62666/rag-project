@@ -1,0 +1,62 @@
+[
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "1CPU 使用率过高",
+    "output": "案例 1：CPU 使用率过高 \n【故障现象】 \n服务器平均负载超过 CPU 核心数 2 倍以上，top 或 htop 显示%us 或%sy 持续高于 80%，\n用户进程响应缓慢。 \n【可能原因】 \n• 应用进程死循环或内存泄漏导致 CPU 飙升。 \n• 系统频繁处理硬件中断（如网卡中断风暴） 。 \n• 恶意挖矿程序或异常后台任务消耗 CPU。 \n【排查命令】 \nbash \nroot@prod-server-01$ top -c                  # 按 CPU 使用率排序进程 \nroot@prod-server-01$ ps aux --sort=-%cpu | head -10 \nroot@prod-server-01$ mpstat -P ALL 1 5       # 检查各核心使用情况 \nroot@prod-server-01$ pidstat 1               # 持续输出进程 CPU 统计 \nroot@prod-server-01$ vmstat 1 5              # 观察中断上下文切换 \n【修复步骤】\n【修复步骤】 \n1. 根据 top 定位高 CPU 的 PID。 \n2. 检查进程详情：systemctl status <PID> 或 lsof -p <PID>，确认是否为合法业务\n进程。 \n3. ⚠ 警告：若为未知恶意程序，先使用 kill -STOP <PID>暂停进程，确认非关键\n服务后再执行 kill -9 <PID>。 \n4. 若为自有应用代码缺陷，立即通知开发团队回滚版本或重启应用容器。\n5. 如果是中断问题，检查网卡驱动或升级内核。 \n【验证方法】 \n• 再次执行 top 或 uptime，确认 CPU 使用率降至正常范围（idle > 70%）。 \n• 监控系统（如 Prometheus）CPU 曲线恢复平稳，持续 15 分钟无反弹。 \n引用来源：[SmartOps_Operational_Guide:1] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "2MySQL “Too many connections”",
+    "output": "案例 2：MySQL “Too many connections” \n【故障现象】 \n应用日志抛出 java.sql.SQLException: Data source rejected establishment of connection, \nmessage from server: \"Too many connections\"，MySQL 客户端无法新建连接。 \n【可能原因】 \n• max_connections 参数设置过小，未匹配应用连接池上限。 \n• 应用程序未正确关闭连接，导致连接泄露。 \n• 突发流量超过数据库处理能力。 \n【排查命令】 \nbash \nmysql@db-01$ mysql -u root -p -e \"SHOW VARIABLES LIKE 'max_connections';\" \nmysql@db-01$ mysql -u root -p -e \"SHOW STATUS LIKE 'Threads_connected';\" \nmysql@db-01$ mysql -u root -p -e \"SHOW PROCESSLIST;\" | wc -l\nmysql@db-01$ mysql -u root -p -e \"SELECT * FROM performance_schema.accounts;\" \n【修复步骤】 \n1. 临时调大 max_connections（需 root 权限） ： \nsql \nSET GLOBAL max_connections = 500; \n2. 强制清理空闲连接（⚠ 警告：可能中断正在运行的事务，优先通知业务方） ： \nsql\nSHOW PROCESSLIST; \nKILL <id>; \n3. 通知应用团队检查连接池配置（maximumPoolSize）并修复连接泄露代码。 \n4. 永久生效需修改 my.cnf：max_connections=500 并重启 MySQL。 \n【验证方法】 \n• 执行 SHOW STATUS LIKE 'Threads_connected'，确认数值低于 max_connections\n的 80%。 \n• 应用重新部署后，连接数稳定在正常水位，无新超时报错。 \n引用来源：[SmartOps_Operational_Guide:2] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "3磁盘空间使用率 100%",
+    "output": "案例 3：磁盘空间使用率 100% \n【故障现象】 \n创建文件或写入日志时提示 No space left on device，df -h 显示/或/var 分区使用率\n100%。 \n【可能原因】 \n• 应用程序日志未轮转，单个大文件撑满磁盘。 \n• Docker/containerd 镜像或容器层占用过多。 \n• Inodes 耗尽（小文件过多） 。 \n【排查命令】 \nbash \nroot@prod-server-01$ df -h                  # 查看分区使用率 \nroot@prod-server-01$ df -i                  # 检查 inode 使用率 \nroot@prod-server-01$ du -sh /* | sort -rh | head -10 \nroot@prod-server-01$ find /var/log -type f -size +1G \n【修复步骤】 \n1. ⚠ 警告：删除文件前务必确认文件用途，避免删除数据库或应用关键数据。\n2. 清理历史日志： \nbash \nroot@prod-server-01$ journalctl --vacuum-time=3d \nroot@prod-server-01$ find /var/log -name \"*.log\" -mtime +30 -delete \n3. 若为 Docker 占用：docker system prune -a -f（⚠ 会删除未使用镜像和容\n器） 。 \n4. 紧急扩容：lvextend -L +10G /dev/mapper/rootvg-root 并 resize2fs。 \n【验证方法】 \n• 再次执行 df -h，使用率降至 85%以下。 \n• 写入测试文件：touch /tmp/test_write && rm /tmp/test_write。 \n引用来源：[SmartOps_Operational_Guide:3] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "4Kubernetes Pod CrashLoopBackOff",
+    "output": "案例 4：Kubernetes Pod CrashLoopBackOff \n【故障现象】 \nkubectl get pods 显示 Pod 状态为 CrashLoopBackOff，容器反复启动失败。 \n【可能原因】 \n• 容器启动命令错误或入口脚本抛异常。 \n• 存活探针（livenessProbe）配置过于严格，未等待服务完全启动。 \n• 内存限制（limits.memory）过低触发 OOM Kill。 \n【排查命令】 \nbash \nroot@k8s-master$ kubectl describe pod <pod-name> -n <namespace> \nroot@k8s-master$ kubectl logs <pod-name> -n <namespace> --previous \nroot@k8s-master$ kubectl get events -n <namespace> --sort-by='.lastTimestamp' \n【修复步骤】 \n1. 查看上一次容器日志定位启动错误：kubectl logs <pod-name> --previous。\n2. 修复启动命令：编辑 Deployment 修正 command 或 args 字段。 \n3. 调整探针参数：增加 initialDelaySeconds 至 30 秒，降低 failureThreshold。 \n4. 若为内存不足：提高 resources.limits.memory 值。 \n5. 重新部署：kubectl rollout restart deployment/<deploy-name> -n \n<namespace>。 \n【验证方法】 \n• kubectl get pods 显示 Running 且 READY 1/1。 \n• 查看日志无反复重启记录，探针持续通过。 \n引用来源：[SmartOps_Operational_Guide:4] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "5Nginx 502 Bad Gateway",
+    "output": "案例 5：Nginx 502 Bad Gateway \n【故障现象】 \n客户端访问网站返回 HTTP 502，Nginx 错误日志中出现 upstream prematurely closed \nconnection 或 connect() failed (111: Connection refused)。 \n【可能原因】 \n• 上游服务（如 PHP-FPM、Tomcat、Node.js）未启动或崩溃。 \n• Nginx 与上游之间的超时时间（proxy_read_timeout）过短。 \n• 上游服务器连接数达到上限，拒绝新连接。 \n【排查命令】 \nbash \nroot@nginx-host$ tail -f /var/log/nginx/error.log \nroot@nginx-host$ curl -I http://127.0.0.1:8080   # 检测上游健康状态 \nroot@nginx-host$ netstat -an | grep :8080 | grep -c ESTABLISHED\nroot@app-server$ systemctl status php-fpm \n【修复步骤】 \n1. 重启上游服务： \nbash\nroot@app-server$ systemctl restart php-fpm   # 或对应服务 \n2. 调整 Nginx 超时配置： \nnginx \nproxy_read_timeout 300s; \nproxy_connect_timeout 75s; \n3. 检查上游服务连接数限制（如 pm.max_children） ，适当调大。 \n4. 重载 Nginx：root@nginx-host$ nginx -s reload。 \n【验证方法】 \n• 重新访问业务 URL，返回 200 状态码。 \n• 监控 Nginx upstream_status 指标不再出现 502。 \n引用来源：[SmartOps_Operational_Guide:5] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "6Redis 内存使用率超过 90%",
+    "output": "案例 6：Redis 内存使用率超过 90% \n【故障现象】 \nRedis 日志出现 OOM command not allowed when used memory > 'maxmemory'，写\n入命令返回(error) OOM。 \n【可能原因】 \n• maxmemory 阈值设置偏低，未预留足够缓冲。 \n• 大量 key 未设置过期时间，或内存碎片率过高。 \n• 业务突发写入远超预期。 \n【排查命令】 \nbash \nroot@redis-host$ redis-cli INFO memory | grep -E \n\"used_memory_human|maxmemory_human|mem_fragmentation_ratio\" \nroot@redis-host$ redis-cli --bigkeys                # 扫描大 key（生产慎用，阻塞\n风险） \nroot@redis-host$ redis-cli INFO stats | grep evicted_keys\n【修复步骤】 \n1. 临时调整淘汰策略（⚠ 可能丢失数据） ： \nbash \nredis-cli CONFIG SET maxmemory-policy allkeys-lru \nredis-cli CONFIG SET maxmemory 4gb \n2. 手动清理大 Key： \nbash \nredis-cli --scan --pattern \"cache:*\" | xargs redis-cli DEL \n⚠ 警告：线上大量删除可能阻塞 Redis，建议使用 UNLINK 异步删除。 \n3. 排查业务代码，为所有可缓存的 key 增加 EXPIRE 时间。 \n4. 垂直扩容或增加 Redis Cluster 分片。 \n【验证方法】 \n• redis-cli INFO memory 中 used_memory_peak_human 低于 maxmemory 的\n80%。 \n• 业务写入恢复正常，无 OOM 错误。 \n引用来源：[SmartOps_Operational_Guide:6] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "7SSH 登录缓慢",
+    "output": "案例 7：SSH 登录缓慢 \n【故障现象】 \n执行 ssh user@host 后等待 10 秒以上才出现密码提示或登录成功。 \n【可能原因】 \n• SSH 服务开启了 UseDNS 反向解析，客户端无 PTR 记录导致超时。 \n• GSSAPIAuthentication 尝试 Kerberos 认证耗时。 \n• 服务器负载过高或网络丢包严重。 \n【排查命令】\nbash \nroot@target-host$ sshd -T | grep -E \"usedns|gssapiauthentication\" \nroot@target-host$ systemctl status sshd \nroot@client-host$ ssh -vvv user@host            # 观察具体哪个阶段卡住 \n【修复步骤】 \n1. 修改/etc/ssh/sshd_config： \ntext \nUseDNS no \nGSSAPIAuthentication no \n2. ⚠ 警告：修改前备份配置文件，避免语法错误导致 sshd 无法启动。 \n3. 重启 sshd：systemctl restart sshd。 \n4. 若仍缓慢，检查/etc/nsswitch.conf 中 hosts 是否优先使用 files 而非 dns。 \n【验证方法】 \n• 重新 SSH 登录，连接时间降至 1 秒以内。 \n• 观察/var/log/secure 无认证超时记录。 \n引用来源：[SmartOps_Operational_Guide:7]\n引用来源：[SmartOps_Operational_Guide:7] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "8应用连接数据库超时",
+    "output": "案例 8：应用连接数据库超时 \n【故障现象】 \n应用日志频繁报 Connection timeout 或 connect timed out，数据库实例本身可正常登\n录。 \n【可能原因】 \n• 网络防火墙或安全组未放开数据库端口。 \n• 数据库连接队列已满（back_log / net.core.somaxconn 不足） 。 \n• 数据库负载过高，新建连接被延迟处理。 \n【排查命令】\nbash \nroot@app-host$ telnet <db-ip> 3306              # 测试端口连通性 \nroot@app-host$ curl -v telnet://<db-ip>:3306 \nroot@db-host$ netstat -s | grep \"listen overflows\" \nroot@db-host$ sysctl net.core.somaxconn \n【修复步骤】 \n1. 检查防火墙： \nbash \nroot@db-host$ iptables -L -n | grep 3306 \n2. 调整操作系统 TCP backlog： \nbash \nroot@db-host$ sysctl -w net.core.somaxconn=1024 \nroot@db-host$ echo \"net.core.somaxconn=1024\" >> /etc/sysctl.conf \n3. 修改 MySQL 参数 back_log 为 500（my.cnf） ，重启MySQL。\n3. 修改 MySQL 参数 back_log 为 500（my.cnf） ，重启MySQL。 \n4. ⚠ 警告：若连接超时由数据库自身过载导致，优先扩容或读写分离，而非单纯\n调参。 \n【验证方法】 \n• 应用端重新发起连接，超时错误消失。 \n• 数据库 Threads_connected 增长平稳，无大量 unauthenticated 会话堆积。 \n引用来源：[SmartOps_Operational_Guide:8] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "9etcd 集群无 Leader",
+    "output": "案例 9：etcd 集群无 Leader \n【故障现象】 \netcdctl endpoint health 返回{\"health\":\"false\"}，member list 显示所有节点状态异常，集\n群不可用。 \n【可能原因】\n• 网络分区导致多数节点无法互相通信。 \n• 磁盘写入延迟过高（etcd 要求≤10ms）。 \n• 节点间系统时间相差过大。 \n【排查命令】 \nbash \nroot@etcd-1$ etcdctl endpoint status --write-out=table \nroot@etcd-1$ ping <other-etcd-ip> \nroot@etcd-1$ etcdctl member list \nroot@etcd-1$ chronyc tracking | grep \"System time\" \n【修复步骤】 \n1. 检查网络连通性，恢复跨节点路由。 \n2. 修复时钟同步： \nbash \nroot@etcd-1$ systemctl restart chronyd \n3. ⚠ 警告：etcd 集群需要多数派（N/2+1）存活，禁止同时重启超过半数节点。 \n4. 如果磁盘延迟高，检查是否被其他进程抢占 IO（如备份任务） ，移出高IO 负\n载。 \n5. 若单节点永久损坏，移除并重建： \nbash \netcdctl member remove <id>\n载。 \n5. 若单节点永久损坏，移除并重建： \nbash \netcdctl member remove <id> \netcdctl member add <new-name> --peer-urls=<url> \n【验证方法】 \n• etcdctl endpoint health 全部返回{\"health\":\"true\"}。 \n• etcdctl put foo bar 成功写入。 \n引用来源：[SmartOps_Operational_Guide:9] \n<div style=\"page-break-after: always;\"></div>",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  },
+  {
+    "instruction": "你是一个运维专家，请根据知识回答运维问题。",
+    "input": "10Prometheus 监控数据缺失（Gap）",
+    "output": "案例 10：Prometheus 监控数据缺失（Gap） \n【故障现象】 \nGrafana 图表出现不规则断点，up 指标显示某些 Target 状态为 0，Prometheus 查询返\n回 no data。 \n【可能原因】 \n• 被监控的 Exporter 进程崩溃或挂起。 \n• Prometheus 抓取超时（scrape_timeout 小于实际响应时间） 。 \n• Prometheus 本地存储损坏或磁盘写满。 \n【排查命令】 \nbash \nroot@prometheus$ curl http://localhost:9090/api/v1/targets | jq \n'.data.activeTargets[].health' \nroot@prometheus$ tail -100 /var/log/prometheus/prometheus.log \nroot@exporter-host$ systemctl status node_exporter \nroot@prometheus$ df -h /prometheus \n【修复步骤】\nroot@prometheus$ df -h /prometheus \n【修复步骤】 \n1. 重启故障 Exporter： \nbash \nroot@exporter-host$ systemctl restart node_exporter \n2. 调整 Prometheus 抓取配置： \nyaml \nscrape_timeout: 30s   # 原 10s 过小 \n3. 若磁盘空间不足，清理 WAL 并强制压缩： \nbash \nroot@prometheus$ promtool tsdb clean /prometheus \n⚠ 警告：删除数据可能导致历史查询丢失，操作前备份。 \n4. 重启 Prometheus：systemctl restart prometheus。\n【验证方法】 \n• Prometheus UI 中 Target 状态变为 UP。 \n• 连续查询 1 小时以上无数据缺失，Grafana 图表连续。 \n引用来源：[SmartOps_Operational_Guide:10]",
+    "source": "D:\\python1.0\\SmartOps Assistant_1\\data\\文档2.pdf"
+  }
+]

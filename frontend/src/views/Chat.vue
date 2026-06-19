@@ -1,6 +1,6 @@
 <template>
   <div class="chat-view">
-    <div class="chat-container" ref="chatRef">
+    <div class="chat-container" ref="chatRef" @scroll="checkScrollPosition">
       <div v-for="(msg, idx) in messages" :key="idx" :class="['message-row', msg.role]">
         <!-- 助手消息：左侧 -->
         <template v-if="msg.role === 'assistant'">
@@ -48,25 +48,31 @@
     </div>
 
     <div class="input-area">
-      <div class="input-wrapper">
+      <div class="input-wrapper" :class="{ expanded: inputExpanded }">
         <textarea
           v-model="query"
           placeholder="输入运维问题... (Enter 发送, Shift+Enter 换行)"
-          rows="2"
+          :rows="inputExpanded ? 12 : 2"
           @keydown.enter.exact.prevent="sendQuery"
           :disabled="isLoading"
           class="chat-input"
+          ref="chatInputRef"
         ></textarea>
-        <button class="send-btn" :disabled="isLoading || !query.trim()" @click="sendQuery">
-          <i class="fa-solid fa-paper-plane"></i>
-        </button>
+        <div class="input-actions">
+          <button v-if="isInputLong" class="expand-btn" @click="inputExpanded = !inputExpanded" :title="inputExpanded ? '收起' : '展开'">
+            <i :class="inputExpanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up'"></i>
+          </button>
+          <button class="send-btn" :disabled="isLoading || !query.trim()" @click="sendQuery">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, inject, watch, onMounted, onBeforeUnmount, onActivated } from 'vue'
+import { ref, computed, nextTick, inject, watch, onMounted, onBeforeUnmount, onActivated, onDeactivated } from 'vue'
 import { useRoute } from 'vue-router'
 import { chatAPI, sessionAPI } from '../api'
 import { marked } from 'marked'
@@ -86,7 +92,20 @@ const isLoading = ref(false)
 const statusText = ref('')
 const statusClass = ref('')
 const chatRef = ref(null)
+const chatInputRef = ref(null)
+const inputExpanded = ref(false)
 const messageCache = inject('messageCache', ref({}))
+const userScrolledUp = ref(false)  // 用户是否手动上滑
+
+const isInputLong = computed(() => {
+  if (!query.value) return false
+  const lines = query.value.split('\n').length
+  return lines > 3 || query.value.length > 150
+})
+
+watch(isInputLong, (val) => {
+  if (!val) inputExpanded.value = false
+})
 
 const quickQuestions = [
   { text: 'Linux服务器CPU使用率持续100%如何排查？', label: 'CPU使用率过高', icon: 'fa-solid fa-microchip' },
@@ -105,6 +124,22 @@ const scrollToBottom = async () => {
   await nextTick()
   if (chatRef.value) {
     chatRef.value.scrollTo({ top: chatRef.value.scrollHeight, behavior: 'smooth' })
+  }
+}
+
+// 检测用户是否在底部附近（允许自动滚动），还是上滑查看历史（停止自动滚动）
+const checkScrollPosition = () => {
+  if (!chatRef.value) return
+  const { scrollTop, scrollHeight, clientHeight } = chatRef.value
+  // 距离底部 80px 以内视为"在底部"，允许自动滚动
+  const isNearBottom = scrollHeight - scrollTop - clientHeight < 80
+  userScrolledUp.value = !isNearBottom
+}
+
+// 智能滚动：仅在用户未上滑时自动滚动到底部
+const smartScrollToBottom = async () => {
+  if (!userScrolledUp.value) {
+    await scrollToBottom()
   }
 }
 
@@ -156,7 +191,7 @@ const loadHistory = async (sessionId) => {
   try {
     const res = await sessionAPI.get(sessionId)
     if (res.data.status === 'ok' && res.data.history?.length > 0) {
-      messages.value = res.data.history.map(h => ({ role: h.role, content: h.content, time: h.time || Date.now() }))
+      messages.value = res.data.history.map(h => ({ role: h.role, content: h.content, time: h.time || '' }))
     } else {
       messages.value = []
     }
@@ -169,12 +204,14 @@ const sendQuery = async () => {
   isLoading.value = true
   const userQuery = query.value
   query.value = ''
+  inputExpanded.value = false
   const sid = currentSessionId.value
 
   messages.value.push({ role: 'user', content: userQuery, time: Date.now() })
   messages.value.push({ role: 'assistant', content: '', cached: false, time: Date.now() })
   statusText.value = '⏳ 正在连接...'
   statusClass.value = 'loading'
+  userScrolledUp.value = false  // 新消息发送时重置，允许自动滚动
   await scrollToBottom()
 
   const assistantMsg = messages.value[messages.value.length - 1]
@@ -202,7 +239,7 @@ const sendQuery = async () => {
               statusText.value = data.message
             } else if (data.type === 'token') {
               assistantMsg.content += data.content
-              scrollToBottom()
+              smartScrollToBottom()
             } else if (data.type === 'done') {
               assistantMsg.cached = data.from_cache || false
               statusText.value = data.from_cache ? '✅ 已从缓存中检索到解决方案' : '✅ 已完成检索调用输出解决方案'
@@ -247,11 +284,18 @@ onBeforeUnmount(() => {
 })
 
 onActivated(() => {
-  if (currentSessionId.value && !messageCache.value[currentSessionId.value] && messages.value.length > 0) {
-    messages.value = []
-    loadHistory(currentSessionId.value)
+  const sid = currentSessionId.value
+  if (sid && messageCache.value[sid]) {
+    messages.value = [...messageCache.value[sid]]
   }
   scrollToBottom()
+})
+
+onDeactivated(() => {
+  const sid = currentSessionId.value
+  if (sid && messages.value.length > 0) {
+    messageCache.value[sid] = [...messages.value]
+  }
 })
 </script>
 
@@ -384,11 +428,12 @@ onActivated(() => {
   flex-shrink: 0;
 }
 .input-wrapper {
-  width: 100%; display: flex; gap: 10px; align-items: center;
+  width: 100%; display: flex; gap: 10px; align-items: flex-end;
   background: var(--bg-primary); border: 1px solid var(--border);
   border-radius: 12px; padding: 8px 8px 8px 16px;
   transition: border-color 0.2s;
 }
+.input-wrapper.expanded { align-items: flex-start; }
 .input-wrapper:focus-within { border-color: var(--accent); }
 .chat-input {
   flex: 1; min-width: 0; background: transparent; border: none; outline: none;
@@ -396,6 +441,17 @@ onActivated(() => {
   line-height: 1.5; resize: none;
 }
 .chat-input::placeholder { color: var(--text-dim); }
+
+.input-actions {
+  display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;
+}
+.expand-btn {
+  width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-secondary); color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; transition: all 0.2s;
+}
+.expand-btn:hover { color: var(--accent); border-color: var(--accent); background: rgba(59,130,246,0.08); }
 
 .send-btn {
   width: 40px; height: 40px; border-radius: 50%; border: none; flex-shrink: 0;

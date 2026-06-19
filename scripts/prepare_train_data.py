@@ -16,7 +16,8 @@ def prepare_from_chunks(output_file: str = None):
 
     pdf_path = str(_BASE_DIR / "data" / "文档2.pdf")
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "ops_from_chunks.json")
+        # 优先使用 data/prepared/ 目录
+        output_file = str(_BASE_DIR / "data" / "prepared" / "ops_from_chunks.json")
 
     if not Path(pdf_path).exists():
         logger.error(f"PDF 不存在: {pdf_path}")
@@ -31,9 +32,9 @@ def prepare_from_chunks(output_file: str = None):
 def prepare_from_manual(output_file: str = None):
     from src.finetune import OpsDataBuilder
 
-    manual_file = str(_BASE_DIR / "finetune_data" / "manual_qa.json")
+    manual_file = str(_BASE_DIR / "data" / "prepared" / "manual_qa.json")
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "ops_from_manual.json")
+        output_file = str(_BASE_DIR / "data" / "prepared" / "ops_from_manual.json")
 
     if not Path(manual_file).exists():
         template = [
@@ -56,7 +57,7 @@ def prepare_synthetic(output_file: str = None, num_samples: int = 200):
     from src.finetune import OpsDataBuilder
 
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "ops_synthetic.json")
+        output_file = str(_BASE_DIR / "data" / "prepared" / "ops_synthetic.json")
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     samples = OpsDataBuilder.generate_synthetic_data(output_file, num_samples)
@@ -179,7 +180,7 @@ def prepare_rerank_data(output_file: str = None):
     ]
 
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "rerank_train.json")
+        output_file = str(_BASE_DIR / "data" / "prepared" / "reranker_train.json")
 
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
@@ -198,7 +199,7 @@ def prepare_from_crawled(output_file: str = None, max_per_source: int = 100):
         return
 
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "ops_from_crawled.json")
+        output_file = str(_BASE_DIR / "data" / "prepared" / "ops_from_crawled.json")
 
     samples = []
     for source_dir in sorted(crawled_dir.iterdir()):
@@ -275,10 +276,10 @@ def _generate_qa_from_chunk(chunk: str, source_name: str) -> Optional[Dict]:
 
 def merge_all_sources(output_file: str = None):
     if not output_file:
-        output_file = str(_BASE_DIR / "finetune_data" / "ops_train.json")
+        output_file = str(_BASE_DIR / "data" / "prepared" / "ops_train.json")
 
     all_samples = []
-    data_dir = _BASE_DIR / "finetune_data"
+    data_dir = _BASE_DIR / "data" / "prepared"
 
     for name in ["ops_from_crawled.json", "ops_from_chunks.json", "ops_from_manual.json", "ops_synthetic.json"]:
         fpath = data_dir / name
@@ -339,11 +340,11 @@ SmartOps 训练数据准备工具
   5. rerank    - Reranker 正负例标注数据
 
 生成文件:
-  finetune_data/
+  data/prepared/
   +-- ops_from_crawled.json   # 来自爬取文档
   +-- ops_from_chunks.json    # 来自PDF切片
   +-- ops_from_manual.json    # 来自手动标注
   +-- ops_synthetic.json      # 合成数据
-  +-- rerank_train.json       # Reranker训练数据
+  +-- reranker_train.json     # Reranker训练数据
   +-- ops_train.json          # 合并后的最终训练集
 """)

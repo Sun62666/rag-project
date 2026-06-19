@@ -8,6 +8,7 @@ from src.graph import build_graph
 from src.memory.short_term import ShortTermMemory
 from src.memory.long_term import LongTermMemory
 from src.agent.ops_agent import OpsAgent, build_agent
+from src.agents import build_multi_agent_graph
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,11 @@ _graph = None
 _stm = None
 _ltm = None
 _agent = None
+_multi_agent_graph = None
 
 
 def init_components():
-    global _retriever, _graph, _stm, _ltm, _agent
+    global _retriever, _graph, _stm, _ltm, _agent, _multi_agent_graph
 
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pdf_path = os.path.join(project_root, "data", "文档2.pdf")
@@ -55,9 +57,12 @@ def init_components():
     logger.info("构建Agent智能体中。。。。")
     _agent = build_agent(_retriever, _stm, _ltm)
 
+    logger.info("构建多智能体工作流中。。。。")
+    _multi_agent_graph = build_multi_agent_graph(retriever=_retriever, ltm=_ltm)
+
 
 def cleanup_components():
-    global _retriever, _graph, _stm, _ltm, _agent
+    global _retriever, _graph, _stm, _ltm, _agent, _multi_agent_graph
     import src.core.redis as redis_mod
     if redis_mod._cache_instance is not None:
         try:
@@ -71,6 +76,7 @@ def cleanup_components():
     _stm = None
     _ltm = None
     _agent = None
+    _multi_agent_graph = None
     logger.info("[Cleanup] 所有组件已释放")
 
 
@@ -92,6 +98,10 @@ def get_ltm() -> Optional[LongTermMemory]:
 
 def get_agent() -> Optional[OpsAgent]:
     return _agent
+
+
+def get_multi_agent_graph():
+    return _multi_agent_graph
 
 
 def get_current_user_dep(authorization: Optional[str] = Header(None)) -> str:

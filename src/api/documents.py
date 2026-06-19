@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.embeddings import DashScopeEmbeddings
-
+from langchain_ollama import OllamaEmbeddings
 from src.api.deps import get_current_user_dep
 from src.core.config import get_settings
 
@@ -128,13 +128,13 @@ async def knowledge_stats(_user: str = Depends(get_current_user_dep)):
     uri = _normalize_uri(cfg.MILVUS_URI)
     try:
         from pymilvus import MilvusClient
+        from src.core.milvus_compat import get_collection_count
         client = MilvusClient(uri=uri)
         collections = client.list_collections()
         result = {}
         for col in collections:
             if client.has_collection(col):
-                stats = client.get_collection_stats(col)
-                result[col] = int(stats.get("row_count", 0))
+                result[col] = get_collection_count(client, col)
         client.close()
         return {"collections": result}
     except Exception as e:
@@ -166,7 +166,7 @@ def _split_and_inject(docs: List[Document], chunk_size: int = 500, chunk_overlap
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separators=["\n案例 ", "\n案例", "案例", "\n问：", "\n问:", "\n## ", "\n\n", "\n", "。", " ", ""],
+        separators=["\n## ", "\n\n", "\n", "。", " ", ""],
     )
     splits = splitter.split_documents(docs)
     for doc in splits:
@@ -178,7 +178,7 @@ def _split_and_inject(docs: List[Document], chunk_size: int = 500, chunk_overlap
 def _append_to_milvus(splits: List[Document], collection_name: str, cfg):
     from src.core.milvus_compat import ensure_milvus_connection
     uri = _normalize_uri(cfg.MILVUS_URI)
-    emb = DashScopeEmbeddings(model=cfg.EMBED_MODEL, dashscope_api_key=cfg.DASHSCOPE_API_KEY)
+    emb = OllamaEmbeddings(model=cfg.EMBED_MODEL, base_url=cfg.OLLAMA_URL)
 
     client = ensure_milvus_connection(uri)
     exists = client.has_collection(collection_name)

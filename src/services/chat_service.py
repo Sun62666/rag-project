@@ -12,7 +12,6 @@ FALLBACK_MESSAGE = "当前知识库未覆盖该问题，建议转交人工运维
 
 _lora_inference = None
 
-
 def get_lora_inference():
     global _lora_inference
     if _lora_inference is not None:
@@ -181,6 +180,103 @@ async def ask_graph(req, username: str, bg_tasks, graph, stm) -> StreamingRespon
             yield f"data: {json.dumps({'type': 'done', 'from_cache': False})}\n\n"
         except Exception as e:
             logger.error(f"stream_gen 异常: {e}")
+            yield f"data: {json.dumps({'type': 'status', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        stream_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
+
+async def ask_multi_agent(req, username: str, bg_tasks, graph, stm, ltm=None) -> StreamingResponse:
+    """多智能体模式：通过多专家智能体协作处理用户问题"""
+    chat_history = get_chat_history(req.session_id)
+    history_strs = [f"{'用户' if h['role']=='user' else '助手'}: {h['content']}" for h in chat_history]
+
+    # 保存短期记忆：用户消息
+    stm.add_user_message(req.session_id, req.query)
+
+    async def stream_gen():
+        try:
+            state = {
+                "query": req.query,
+                "intent": "",
+                "chat_history": history_strs,
+                "fault_result": "",
+                "system_result": "",
+                "document_result": "",
+                "memory_result": "",
+                "agent_messages": [],
+                "answer": "",
+            }
+            full_answer = []
+
+            yield f"data: {json.dumps({'type': 'status', 'message': '多智能体协作分析中...'})}\n\n"
+
+            # 记录已发送的状态消息，避免重复
+            sent_statuses = set()
+
+            async for msg, metadata in graph.astream(state, stream_mode="messages"):
+                node = metadata.get("langgraph_node", "")
+
+                # 根据节点发送状态消息
+                if node == "coordinator" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '协调者智能体分析意图...'})}\n\n"
+                    sent_statuses.add(node)
+                elif node == "fault_agent" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '故障诊断专家处理中...'})}\n\n"
+                    sent_statuses.add(node)
+                elif node == "system_agent" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '系统监控专家检查中...'})}\n\n"
+                    sent_statuses.add(node)
+                elif node == "document_agent" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '文档问答专家检索中...'})}\n\n"
+                    sent_statuses.add(node)
+                elif node == "memory_agent" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '记忆专家检索历史...'})}\n\n"
+                    sent_statuses.add(node)
+                elif node == "synthesis_agent" and node not in sent_statuses:
+                    yield f"data: {json.dumps({'type': 'status', 'message': '综合回答生成中...'})}\n\n"
+                    sent_statuses.add(node)
+
+                # 流式输出 synthesis_agent 的 token
+                if node == "synthesis_agent" and isinstance(msg, AIMessageChunk) and msg.content:
+                    token = msg.content
+                    full_answer.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+            answer_text = "".join(full_answer)
+
+            # 如果流式未捕获答案，尝试直接获取
+            if not answer_text.strip():
+                logger.info("[multi_agent] 流式未捕获答案，尝试直接获取...")
+                final_state = await graph.ainvoke(state)
+                answer_text = final_state.get("answer", "").strip()
+                if answer_text:
+                    for char in answer_text:
+                        yield f"data: {json.dumps({'type': 'token', 'content': char})}\n\n"
+
+            # 保存短期记忆：AI 回答
+            stm.add_ai_message(req.session_id, answer_text)
+
+            # 保存长期记忆
+            if ltm:
+                try:
+                    bg_tasks.add_task(ltm.save_memory, username, req.session_id, req.query, answer_text)
+                except Exception as e:
+                    logger.error(f"[multi_agent] 保存长期记忆失败: {e}")
+
+            cfg = get_settings()
+            if answer_text and answer_text != FALLBACK_MESSAGE:
+                bg_tasks.add_task(get_cache().setex, f"ops:{req.query}", cfg.CACHE_TTL_SHORT, answer_text)
+
+            bg_tasks.add_task(save_chat_history, req.session_id, req.query, answer_text, username)
+
+            yield f"data: {json.dumps({'type': 'done', 'from_cache': False})}\n\n"
+
+        except Exception as e:
+            logger.error(f"[multi_agent] stream_gen 异常: {e}")
             yield f"data: {json.dumps({'type': 'status', 'message': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

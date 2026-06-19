@@ -4,6 +4,7 @@ import uuid
 from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_milvus import Milvus as MilvusVS
 from src.core.config import get_settings
 from src.core.milvus_compat import ensure_milvus_connection, get_collection_count
@@ -25,9 +26,9 @@ class LongTermMemory:
             logger.warning(f"[长期记忆] MILVUS_URI 未配置（当前值: {self.cfg.MILVUS_URI!r}），长期记忆不可用")
             return
 
-        self._emb = DashScopeEmbeddings(
+        self._emb = OllamaEmbeddings(
             model=self.cfg.EMBED_MODEL,
-            dashscope_api_key=self.cfg.DASHSCOPE_API_KEY
+            base_url=self.cfg.OLLAMA_URL
         )
         self._init_collection()
 

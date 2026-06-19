@@ -89,7 +89,7 @@ export const chatAPI = {
 // 模式 API
 export const modeAPI = {
   get: () => api.get('/mode'),
-  switch: (useAgent) => api.post('/mode', { use_agent: useAgent }),
+  switch: (mode) => api.post('/mode', { mode: mode }),
 }
 
 // 运维工具 API
@@ -109,12 +109,20 @@ export const opsAPI = {
   kgStats: () => api.get('/ops/knowledge/graph/stats'),
   kgVis: (entity, depth) => api.get('/ops/knowledge/graph/vis', { params: { entity, depth } }),
   kgExtract: (text, method) => api.post(`/ops/knowledge/graph/extract?text=${encodeURIComponent(text)}&method=${method}`),
+  kgUpload: (formData) => api.post('/ops/knowledge/graph/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  kgRelations: (entity, depth) => api.get('/ops/knowledge/graph/relations', { params: { entity, depth } }),
 }
 
 // 评估 API
 export const evaluateAPI = {
-  run: (threshold = 0.7) => api.post('/evaluate', { threshold }),
-  getQuestions: () => api.get('/evaluate/questions'),
+  run: (data) => {
+    if (typeof data === 'number') data = { threshold: data }
+    return api.post('/evaluate', data)
+  },
+  custom: (data) => api.post('/evaluate/custom', data),
+  getQuestions: (domain) => api.get('/evaluate/questions', { params: { domain } }),
 }
 
 export default api

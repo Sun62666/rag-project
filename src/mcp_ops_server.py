@@ -39,3 +39,7 @@ def read_service_log(log_path: str = "/var/log/syslog", lines: int = 20) -> str:
 def knowledge_retriever(query: str) -> str:
     """从运维知识库检索故障解决方案、配置规范等文档。参数：query-检索关键词"""
     return knowledge_retriever_logic(query, retriever)
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

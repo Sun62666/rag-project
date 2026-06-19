@@ -94,16 +94,45 @@
         <input v-model="kgSearchEntity" placeholder="搜索实体..." class="tool-input" @keyup.enter="searchKG" />
         <button class="tool-btn" @click="searchKG"><i class="fa-solid fa-magnifying-glass"></i> 搜索</button>
         <button class="tool-btn" @click="loadFullGraph"><i class="fa-solid fa-circle-nodes"></i> 加载全图</button>
-        <button class="tool-btn" @click="loadSampleData"><i class="fa-solid fa-file-import"></i> 导入示例数据</button>
+        <button class="tool-btn accent" @click="$refs.kgFileInput.click()"><i class="fa-solid fa-file-import"></i> 导入数据</button>
+        <input ref="kgFileInput" type="file" accept=".pdf,.txt,.md,.docx" style="display:none" @change="handleKGUpload" />
+        <select v-model="kgMethod" class="tool-select" style="width:120px">
+          <option value="hybrid">混合抽取</option>
+          <option value="rule">规则抽取</option>
+          <option value="spacy">spaCy</option>
+          <option value="llm">LLM抽取</option>
+        </select>
       </div>
       <div v-if="kgStats" class="kg-stats">
         <span class="kg-tag nodes">{{ kgStats.total_nodes || 0 }} 实体</span>
         <span class="kg-tag edges">{{ kgStats.total_relations || 0 }} 关系</span>
       </div>
+      <div v-if="kgUploadMsg" :class="['upload-msg', kgUploadStatus === 'ok' ? 'success' : 'error']">
+        {{ kgUploadMsg }}
+      </div>
       <div v-if="kgLoading" style="text-align:center;padding:40px">
         <i class="fa-solid fa-spinner fa-spin" style="font-size:32px;color:var(--accent)"></i>
       </div>
-      <div v-else id="kg-network-container" class="kg-container"></div>
+      <template v-else>
+        <div id="kg-network-container" class="kg-container"></div>
+        <!-- 关系文字列表 -->
+        <div v-if="kgRelations.length > 0" class="kg-relations-panel">
+          <div class="kg-relations-header">
+            <h4>关系列表</h4>
+            <span class="kg-relations-count">{{ kgRelations.length }} 条关系</span>
+          </div>
+          <div class="kg-relations-list">
+            <div v-for="(r, i) in kgRelations" :key="i" class="kg-relation-item">
+              <span class="kg-entity" :class="r.source_type?.toLowerCase()">{{ r.source }}</span>
+              <span class="kg-rel-arrow">
+                <span class="kg-rel-label">{{ r.relation }}</span>
+                <i class="fa-solid fa-arrow-right"></i>
+              </span>
+              <span class="kg-entity" :class="r.target_type?.toLowerCase()">{{ r.target }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -213,6 +242,10 @@ const formatSize = (bytes) => {
 const kgSearchEntity = ref('')
 const kgStats = ref(null)
 const kgLoading = ref(false)
+const kgRelations = ref([])
+const kgMethod = ref('hybrid')
+const kgUploadMsg = ref('')
+const kgUploadStatus = ref('ok')
 let kgNetwork = null
 
 const loadKGStats = async () => {
@@ -225,9 +258,13 @@ const loadKGStats = async () => {
 const loadFullGraph = async () => {
   kgLoading.value = true
   try {
-    const res = await opsAPI.kgVis('', 2)
+    const [visRes, relRes] = await Promise.all([
+      opsAPI.kgVis('', 2),
+      opsAPI.kgRelations('', 2),
+    ])
     await nextTick()
-    renderKGNetwork(res.data.nodes || [], res.data.edges || [])
+    renderKGNetwork(visRes.data.nodes || [], visRes.data.edges || [])
+    kgRelations.value = relRes.data.relations || []
   } catch (e) { console.error('加载图谱失败:', e) }
   finally { kgLoading.value = false }
 }
@@ -236,20 +273,35 @@ const searchKG = async () => {
   if (!kgSearchEntity.value.trim()) return
   kgLoading.value = true
   try {
-    const res = await opsAPI.kgVis(kgSearchEntity.value, 2)
+    const [visRes, relRes] = await Promise.all([
+      opsAPI.kgVis(kgSearchEntity.value, 1),
+      opsAPI.kgRelations(kgSearchEntity.value, 1),
+    ])
     await nextTick()
-    renderKGNetwork(res.data.nodes || [], res.data.edges || [])
+    renderKGNetwork(visRes.data.nodes || [], visRes.data.edges || [])
+    kgRelations.value = relRes.data.relations || []
   } catch (e) { console.error('搜索图谱失败:', e) }
   finally { kgLoading.value = false }
 }
 
-const loadSampleData = async () => {
+const handleKGUpload = async (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  kgUploadMsg.value = ''
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('method', kgMethod.value)
   try {
-    await ElMessageBox.confirm('将导入运维示例数据到知识图谱，确认继续？', '提示')
-    await opsAPI.kgExtract('Redis内存占用过大导致OOM，可以通过修改maxmemory配置限制内存使用。MySQL连接超时可能是因为wait_timeout配置不当。Nginx出现502错误通常是因为后端服务不可用。Docker磁盘满可以用docker system prune清理。', 'hybrid')
+    const res = await opsAPI.kgUpload(formData)
+    kgUploadMsg.value = res.data.message || `成功抽取 ${res.data.triples_extracted} 个三元组`
+    kgUploadStatus.value = res.data.status === 'ok' ? 'ok' : 'error'
     await loadKGStats()
     await loadFullGraph()
-  } catch { /* cancelled */ }
+  } catch (e) {
+    kgUploadMsg.value = '上传失败: ' + (e.response?.data?.message || e.message)
+    kgUploadStatus.value = 'error'
+  }
+  e.target.value = ''
 }
 
 const KG_COLORS = {
@@ -384,4 +436,48 @@ onMounted(async () => {
 .kg-tag.nodes { background: rgba(34,197,94,0.12); color: #4ade80; }
 .kg-tag.edges { background: rgba(234,179,8,0.12); color: #facc15; }
 .kg-container { height: 500px; border: 1px solid var(--border); border-radius: 8px; background: #0f172a; }
+
+/* 导入数据按钮 */
+.tool-btn.accent {
+  background: rgba(59,130,246,0.12); color: var(--accent); border-color: rgba(59,130,246,0.3);
+}
+.tool-btn.accent:hover { background: rgba(59,130,246,0.2); }
+
+/* 关系文字列表 */
+.kg-relations-panel {
+  margin-top: 16px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-secondary); overflow: hidden;
+}
+.kg-relations-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.kg-relations-header h4 { color: var(--text-primary); margin: 0; font-size: 14px; }
+.kg-relations-count { color: var(--text-dim); font-size: 12px; }
+.kg-relations-list {
+  max-height: 400px; overflow-y: auto; padding: 8px 0;
+}
+.kg-relation-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; font-size: 13px; transition: background 0.1s;
+}
+.kg-relation-item:hover { background: rgba(59,130,246,0.04); }
+.kg-entity {
+  padding: 3px 10px; border-radius: 4px; font-weight: 500; white-space: nowrap;
+}
+.kg-entity.component { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.kg-entity.fault { background: rgba(239,68,68,0.15); color: #f87171; }
+.kg-entity.command { background: rgba(34,197,94,0.15); color: #4ade80; }
+.kg-entity.config { background: rgba(168,85,247,0.15); color: #c084fc; }
+.kg-entity.metric { background: rgba(234,179,8,0.15); color: #facc15; }
+.kg-entity.service { background: rgba(6,182,212,0.15); color: #22d3ee; }
+.kg-entity.protocol { background: rgba(244,114,182,0.15); color: #f472b6; }
+.kg-entity.entity { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.kg-rel-arrow {
+  display: flex; align-items: center; gap: 6px; color: var(--text-dim); flex-shrink: 0;
+}
+.kg-rel-label {
+  padding: 2px 8px; border-radius: 3px; font-size: 11px;
+  background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+}
 </style>

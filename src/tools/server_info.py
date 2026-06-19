@@ -8,18 +8,20 @@ logger = logging.getLogger(__name__)
 
 def server_system_check_logic() -> str:
     try:
-        cpu_usage = psutil.cpu_percent(interval=1)
+        cpu_usage = psutil.cpu_percent(interval=0)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage('C:\\')
+        mem_total = round(mem.total / 1024 / 1024 / 1024, 2)
+        disk_total = round(disk.total / 1024 / 1024 / 1024, 2)
         return (
-            f"【服务器系统巡检报告】\n"
-            f"CPU使用率：{cpu_usage}%\n"
-            f"内存使用率：{mem.percent}% (总内存：{round(mem.total/1024/1024/1024,2)}G)\n"
-            f"磁盘使用率：{disk.percent}% (总磁盘：{round(disk.total/1024/1024/1024,2)}G)\n"
-            f"运行进程数：{len(psutil.pids())}"
+            "【服务器系统巡检报告】\n"
+            "CPU使用率：" + str(cpu_usage) + "%\n"
+            "内存使用率：" + str(mem.percent) + "% (总内存：" + str(mem_total) + "G)\n"
+            "磁盘使用率：" + str(disk.percent) + "% (总磁盘：" + str(disk_total) + "G)\n"
+            "运行进程数：" + str(len(psutil.pids()))
         )
     except Exception as e:
-        return f"系统巡检失败：{str(e)}"
+        return "系统巡检失败：" + repr(e)
 
 
 @tool

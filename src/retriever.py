@@ -7,6 +7,7 @@ from langchain_milvus import Milvus as MilvusVS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 from sentence_transformers import CrossEncoder
@@ -109,7 +110,7 @@ class OpsRetriever:
 
         # 初始化 Milvus 向量检索（必须先初始化，后续可能从中加载数据）
         try:
-            emb = DashScopeEmbeddings(model=self.cfg.EMBED_MODEL, dashscope_api_key=self.cfg.DASHSCOPE_API_KEY)
+            emb = OllamaEmbeddings(model=self.cfg.EMBED_MODEL,base_url=self.cfg.OLLAMA_URL)
 
             if collection_exists:
                 self.vs = MilvusVS(

@@ -475,10 +475,17 @@ def _check_gpu_available() -> bool:
 if __name__ == "__main__":
     import argparse
 
+    # 数据目录优先级：data/prepared/ > finetune_data/
+    _prepared_dir = _BASE_DIR / "data" / "prepared"
+    _finetune_dir = _BASE_DIR / "finetune_data"
+    _default_lora_data = str(_prepared_dir / "lora_train.json") if (_prepared_dir / "lora_train.json").exists() else str(_finetune_dir / "ops_train.json")
+    _default_rerank_data = str(_prepared_dir / "reranker_train.json") if (_prepared_dir / "reranker_train.json").exists() else str(_finetune_dir / "rerank_train.json")
+
     parser = argparse.ArgumentParser(description="SmartOps LoRA 微调工具")
     parser.add_argument("--mode", choices=["prepare", "train", "inference", "reranker"], default="prepare")
     parser.add_argument("--model-path", default="Qwen/Qwen2.5-1.5B-Instruct", help="基座模型路径")
-    parser.add_argument("--data-file", default=str(_BASE_DIR / "finetune_data" / "ops_train.json"))
+    parser.add_argument("--data-file", default=_default_lora_data, help="LoRA训练数据文件")
+    parser.add_argument("--rerank-data-file", default=_default_rerank_data, help="Reranker训练数据文件")
     parser.add_argument("--output-dir", default=str(_BASE_DIR / "model" / "lora-ops"))
     parser.add_argument("--pdf-path", default=str(_BASE_DIR / "data" / "文档2.pdf"))
     parser.add_argument("--epochs", type=int, default=3)
@@ -490,10 +497,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.mode == "prepare":
-        data_dir = _BASE_DIR / "finetune_data"
-        data_dir.mkdir(exist_ok=True)
+        # 优先使用 data/prepared/ 目录
+        data_dir = _BASE_DIR / "data" / "prepared"
+        data_dir.mkdir(parents=True, exist_ok=True)
 
-        output = str(data_dir / "ops_train.json")
+        output = str(data_dir / "lora_train.json")
 
         if Path(args.pdf_path).exists():
             samples = OpsDataBuilder.from_retriever_chunks(args.pdf_path, output)
@@ -534,4 +542,13 @@ if __name__ == "__main__":
             base_model_path=str(_BASE_DIR / "model" / "bge-reranker-v2-m3"),
             output_dir=str(_BASE_DIR / "model" / "lora-reranker"),
         )
-        logger.info("Reranker 微调需要标注数据，请准备 rerank_train.json 后运行")
+        # 加载新的 reranker_train.json 数据
+        rerank_file = args.rerank_data_file
+        if not Path(rerank_file).exists():
+            logger.error(f"Reranker 训练数据不存在: {rerank_file}")
+            logger.info("请先运行: python scripts/prepare_ops_data.py --task finetune")
+        else:
+            logger.info(f"加载 Reranker 训练数据: {rerank_file}")
+            samples = reranker.prepare_rerank_dataset(rerank_file)
+            model = reranker.train(samples)
+            logger.info(f"Reranker 训练完成! 模型保存至 {reranker.output_dir}/best_reranker")

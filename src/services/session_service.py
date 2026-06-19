@@ -78,8 +78,8 @@ def save_chat_history(session_id: str, user_msg: str, assistant_msg: str, userna
     try:
         history_key = f"chat_history:{session_id}"
         history_len = cache.llen(history_key)
-        cache.rpush(history_key, json.dumps({"role": "user", "content": user_msg}, ensure_ascii=False))
-        cache.rpush(history_key, json.dumps({"role": "assistant", "content": assistant_msg}, ensure_ascii=False))
+        cache.rpush(history_key, json.dumps({"role": "user", "content": user_msg, "time": _now()}, ensure_ascii=False))
+        cache.rpush(history_key, json.dumps({"role": "assistant", "content": assistant_msg, "time": _now()}, ensure_ascii=False))
         cache.expire(history_key, cfg.CACHE_TTL_LONG)
         cache.sadd(_session_queries_key(session_id), user_msg)
         cache.expire(_session_queries_key(session_id), cfg.CACHE_TTL_LONG)

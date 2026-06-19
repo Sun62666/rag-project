@@ -8,6 +8,7 @@ from typing import Optional, List
 from langchain_core.tools import tool
 from langchain_core.documents import Document
 from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_milvus import Milvus as MilvusVS
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
@@ -27,9 +28,9 @@ class DocumentQAService:
     def __init__(self, collection_name: str = "property_regulations"):
         self.cfg = get_settings()
         self.collection_name = collection_name
-        self._emb = DashScopeEmbeddings(
+        self._emb = OllamaEmbeddings(
             model=self.cfg.EMBED_MODEL,
-            dashscope_api_key=self.cfg.DASHSCOPE_API_KEY
+            base_url=self.cfg.OLLAMA_URL
         )
         self._vs = None
         self._bm25 = None
@@ -112,7 +113,7 @@ class DocumentQAService:
             if docs:
                 self._splits = docs
                 self._bm25 = BM25Retriever.from_documents(docs)
-                self._bm25.k = 10
+                self._bm25.k = 15
                 logger.info(f"[DocumentQA] ✅ BM25 索引构建完成（{len(docs)} 个切片来自 Milvus）")
             else:
                 logger.info(f"[DocumentQA] 集合 {self.collection_name} 中无数据，BM25 不可用")
@@ -123,7 +124,7 @@ class DocumentQAService:
         if self._vs is None:
             return
         try:
-            vec_retr = self._vs.as_retriever(search_kwargs={"k": 10})
+            vec_retr = self._vs.as_retriever(search_kwargs={"k": 15})
             if self._bm25 is not None:
                 self._ensemble = EnsembleRetriever(
                     retrievers=[self._bm25, vec_retr],

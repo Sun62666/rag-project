@@ -2,8 +2,8 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from src.core.config import get_settings
-from src.api.deps import get_current_user_dep, get_agent, get_graph, get_stm
-from src.services.chat_service import handle_cached_answer, ask_agent, ask_graph, handle_lora_fallback
+from src.api.deps import get_current_user_dep, get_agent, get_graph, get_stm, get_ltm, get_multi_agent_graph
+from src.services.chat_service import handle_cached_answer, ask_agent, ask_graph, ask_multi_agent, handle_lora_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,9 @@ async def ask(
     stm = get_stm()
 
     try:
-        if cfg.USE_AGENT:
+        if cfg.USE_AGENT == "multi_agent":
+            return await ask_multi_agent(req, username, bg_tasks, get_multi_agent_graph(), stm, get_ltm())
+        elif cfg.USE_AGENT == "agent":
             return await ask_agent(req, username, bg_tasks, get_agent(), stm)
         else:
             return await ask_graph(req, username, bg_tasks, get_graph(), stm)
@@ -46,19 +48,26 @@ async def ask(
 
 
 class ModeSwitch(BaseModel):
-    use_agent: bool
+    mode: str = "graph"  # graph / agent / multi_agent
 
 
 @router.get("/mode")
 async def get_mode():
     cfg = get_settings()
-    return {"mode": "agent" if cfg.USE_AGENT else "graph", "use_agent": cfg.USE_AGENT}
+    mode = cfg.USE_AGENT
+    if mode == "multi_agent":
+        mode_name = "multi_agent"
+    elif mode == "agent":
+        mode_name = "agent"
+    else:
+        mode_name = "graph"
+    return {"mode": mode_name, "use_agent": mode}
 
 
 @router.post("/mode")
 async def switch_mode(body: ModeSwitch):
     cfg = get_settings()
-    cfg.USE_AGENT = body.use_agent
-    mode_name = "agent" if body.use_agent else "graph"
+    cfg.USE_AGENT = body.mode
+    mode_name = body.mode
     logger.info(f"[Mode] 切换为 {mode_name} 模式")
-    return {"mode": mode_name, "use_agent": body.use_agent}
+    return {"mode": mode_name, "use_agent": body.mode}

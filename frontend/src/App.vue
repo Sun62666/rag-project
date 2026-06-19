@@ -97,8 +97,8 @@
           </div>
         </div>
         <div class="top-bar-right">
-          <span :class="['mode-tag', currentMode === 'agent' ? 'agent' : 'graph']">
-            {{ currentMode === 'agent' ? 'Agent' : 'Graph' }} 模式
+          <span :class="['mode-tag', currentMode]">
+            {{ modeLabel }}
           </span>
           <button class="mode-switch-btn" @click="toggleMode">切换模式</button>
         </div>
@@ -130,10 +130,15 @@ const sessions = ref([])
 const currentSessionId = ref('')
 const renamingSessionId = ref('')
 const renameValue = ref('')
-const currentMode = ref('agent')
+const currentMode = ref('multi_agent')
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const messageCache = ref({})
+
+const modeLabel = computed(() => {
+  const labels = { multi_agent: '多智能体', agent: 'Agent', graph: 'Graph' }
+  return labels[currentMode.value] || currentMode.value
+})
 
 const currentTitle = computed(() => {
   const sess = sessions.value.find(s => s.session_id === currentSessionId.value)
@@ -213,7 +218,9 @@ const loadMode = async () => {
 }
 
 const toggleMode = async () => {
-  const newMode = currentMode.value === 'agent' ? false : true
+  const modes = ['multi_agent', 'agent', 'graph']
+  const idx = modes.indexOf(currentMode.value)
+  const newMode = modes[(idx + 1) % modes.length]
   try {
     const res = await modeAPI.switch(newMode)
     currentMode.value = res.data.mode
@@ -381,6 +388,7 @@ body {
 }
 .mode-tag.agent { background: rgba(34,197,94,0.12); color: #4ade80; }
 .mode-tag.graph { background: rgba(234,179,8,0.12); color: #facc15; }
+.mode-tag.multi_agent { background: rgba(59,130,246,0.12); color: #60a5fa; }
 .mode-switch-btn {
   padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
   background: transparent; color: var(--text-secondary); font-size: 12px;

@@ -21,7 +21,7 @@ langgraph-prebuilt==1.0.9
 langgraph-sdk==0.3.13
 langsmith==0.7.26
 
-
+mcp
 
 # 向量库与检索
 pymilvus
